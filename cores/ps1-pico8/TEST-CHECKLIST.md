@@ -1,4 +1,4 @@
-# Combined handheld test — stock-tsp-0.3.0-test.9
+# Combined handheld test — stock-tsp-0.3.0-test.11
 
 **Not hardware accepted. Do not overwrite an unknown card baseline.** This
 document is a test plan, not permission for an agent to install or operate the
@@ -16,7 +16,8 @@ separate from device operation; a mounted card alone is not approval.
 ## Before installation
 
 - [ ] Verify the ZIP SHA256 against the external checksum file; extract it on
-  the Mac and verify its internal manifest. Stop on a mismatch.
+  the Mac and verify its internal manifest. Confirm `Slot/Logs` exists after
+  fresh extraction, even when empty. Stop on a mismatch or missing directory.
 - [ ] Power the handheld off normally. Back up all files that would be replaced
   plus saves/settings. Identify the intended removable FAT32 card afresh; do
   not assume a disk number. Stop if the startup scripts, updater or current
@@ -26,7 +27,7 @@ separate from device operation; a mounted card alone is not approval.
   BIOS, saves, states, settings, pairing data and splash overrides. The ZIP
   contains no user content. Never hot-replace the running executable.
 - [ ] After a separately approved copy and safe eject, check the displayed build
-  label is `stock-tsp-0.3.0-test.9`. Keep the previous payload for rollback.
+  label is `stock-tsp-0.3.0-test.11`. Keep the previous payload for rollback.
 
 ## Test.9 comparison-only SwanStation (owner-controlled, not executed)
 

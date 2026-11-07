@@ -12,7 +12,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-VERSION = "stock-tsp-0.3.0-test.10"
+VERSION = "stock-tsp-0.3.0-test.11"
 BASE = "7d14cc6c9b4017a5dc2739c5ea54279a70f7a14b"
 IMAGE = "rust@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9"
 SWAN_COMMIT = "631f0fb31b809e0f889d7c551fe695788e39c1d3"
@@ -58,6 +58,38 @@ def archive(target, members):
             info = tarfile.TarInfo(name)
             info.size, info.mode = len(data), mode
             tar.addfile(info, io.BytesIO(data))
+
+
+def write_package(tree, package):
+    # The launcher needs Logs before Slot can create its runtime directories.
+    (tree / "Slot/Logs").mkdir(parents=True, exist_ok=True)
+    files = [
+        {"path": str(p.relative_to(tree)), "bytes": p.stat().st_size, "sha256": sha(p)}
+        for p in sorted(tree.rglob("*"))
+        if p.is_file()
+    ]
+    write(tree / "MANIFEST.json", {"version": VERSION, "files": files})
+    (tree / "SHA256SUMS").write_text(
+        "".join(f"{f['sha256']}  {f['path']}\n" for f in files)
+    )
+    with zipfile.ZipFile(
+        package, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+    ) as z:
+        for path in sorted(tree.rglob("*")):
+            if path.is_file():
+                assert path.stat().st_size < 2**32 - 1
+            if path.is_file() or path.is_dir():
+                z.write(path, str(path.relative_to(tree)))
+    with zipfile.ZipFile(package) as z:
+        assert z.testzip() is None
+        assert len(z.namelist()) == len(set(z.namelist()))
+        for member in z.infolist():
+            path = tree / member.filename
+            if member.is_dir():
+                assert path.is_dir()
+            else:
+                assert z.read(member) == path.read_bytes()
+    return len(files)
 
 
 def swan_inputs(source, runtime):
@@ -341,28 +373,8 @@ def main():
         ],
     }
     write(tree / "Slot/BUILD-INFO.json", build)
-    files = [
-        {"path": str(p.relative_to(tree)), "bytes": p.stat().st_size, "sha256": sha(p)}
-        for p in sorted(tree.rglob("*"))
-        if p.is_file()
-    ]
-    write(tree / "MANIFEST.json", {"version": VERSION, "files": files})
-    (tree / "SHA256SUMS").write_text(
-        "".join(f"{f['sha256']}  {f['path']}\n" for f in files)
-    )
     package = out / f"slot-tsp-{VERSION.removeprefix('stock-tsp-')}-fat32.zip"
-    with zipfile.ZipFile(
-        package, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9
-    ) as z:
-        for path in sorted(tree.rglob("*")):
-            if path.is_file():
-                assert path.stat().st_size < 2**32 - 1
-                z.write(path, str(path.relative_to(tree)))
-    with zipfile.ZipFile(package) as z:
-        assert z.testzip() is None
-        assert len(z.namelist()) == len(set(z.namelist()))
-        for member in z.infolist():
-            assert z.read(member) == (tree / member.filename).read_bytes()
+    payload_files = write_package(tree, package)
     shutil.copyfile(tree / "Slot/BUILD-INFO.json", out / "PROVENANCE.json")
     shutil.copyfile(tree / "Slot/VERIFICATION.json", out / "VERIFICATION.json")
     shutil.copyfile(tree / "Slot/TEST-CHECKLIST.md", out / "TEST-CHECKLIST.md")
@@ -372,7 +384,7 @@ def main():
             {
                 "zip": str(package),
                 "sha256": sha(package),
-                "payload_files": len(files),
+                "payload_files": payload_files,
                 "build": build,
             },
             indent=2,

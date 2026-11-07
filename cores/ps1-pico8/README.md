@@ -26,6 +26,20 @@ are generated under Slot's licence, with no downloaded art, marks or textures.
 None and custom PNG remain selectable. Native bezel textures use the actual
 panel size, avoiding a 720×480 cover-crop before display on a 1280×720 panel.
 
+## Test.11: fresh-card startup packaging correction
+
+Test.11 creates `Slot/Logs` during packaging and retains empty ZIP directories.
+Test.10 omitted this required folder on a fresh extraction, so the stock
+launcher could exit before starting Slot or creating a log. A host-only
+clean-extraction regression covers both absent and existing staging Logs
+directories, payload bytes, manifests and checksums.
+
+The frontend is rebuilt with the test.11 label; pinned core bytes and software
+defaults are unchanged. This does not enable shared-texture rendering or fix
+Swan speed/audio. Uncommitted host attachment experiments are not included.
+This is a stock-firmware SD content package, not a bootable OS image. Physical
+boot still needs owner acceptance; stable 0.2 and test.10 assets are unchanged.
+
 ## Test.10: completed software milestone, not GPU integration
 
 This experimental prerelease candidate rebuilds the frontend with PNG-signature
@@ -332,6 +346,18 @@ The test ZIP includes [notices](NOTICE.md), licence texts, exact core/submodule
 sources, frontend snapshot and build materials under `Slot/Sources/`.
 `package-test.py` verifies the frozen baseline, refuses to replace an existing
 output directory and checks every ZIP member against its assembled payload.
+It creates `Slot/Logs` and preserves directory entries in the ZIP: the stock
+launcher requires this empty directory before Slot starts. The file manifest
+and payload count still cover files only. Run the host-only clean-extraction
+regression before preparing a new candidate:
+
+```sh
+python3 cores/ps1-pico8/test-package.py -v
+```
+
+The test checks fresh extraction with and without a pre-existing staging Logs
+directory, required startup directories, unchanged payload bytes and file
+checksums. It does not execute Slot or establish handheld boot acceptance.
 
 - Preserve fake-08's pinned `LICENSE.MD`, copyright notices and dependency
   licences, including z8lua, LodePNG and miniz. Its licence file also attributes
