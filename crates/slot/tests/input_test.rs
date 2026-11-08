@@ -5,7 +5,7 @@ use slot::audio::StubSink;
 #[cfg(target_os = "macos")]
 use slot::input::evdev::{code_to_btn_for, Ev, Hat, PadMap, TspAnalog, EV_ABS, EV_KEY};
 use slot::session::Session;
-use slot_input::{Action, Btn, RawEvent};
+use slot_input::{Action, Btn, RawEvent, MENU_HOLD_MS};
 #[cfg(target_os = "macos")]
 use slot_input::{InputSource, Millis, PhysicalEvent};
 use slot_retro::ButtonMask;
@@ -92,11 +92,11 @@ fn both_core_settings_rehearse_every_ps1_button_without_loading_a_game_or_writin
                 assert!(!s.has_core(), "the input screen loaded a game");
                 s.feed([RawEvent::Up(b)], 1700);
                 s.feed([], 1800);
-                if b != Btn::B {
-                    assert_eq!(s.app().input_test().unwrap().mask().0, 0);
-                }
+                assert_eq!(s.app().input_test().unwrap().mask().0, 0);
             }
-            assert!(s.app().input_test().is_none(), "B release did not return");
+            s.feed([RawEvent::Down(Btn::Menu)], 2000);
+            s.feed([], 2000 + MENU_HOLD_MS);
+            assert!(s.app().input_test().is_none(), "Menu hold did not return");
             assert_eq!(s.app().quick_menu(), Some(QuickRow::InputTest));
             assert_eq!(
                 std::fs::read(d.path().join("Config/controls.txt")).unwrap(),
@@ -129,6 +129,15 @@ fn the_screen_uses_saved_remaps_and_swallows_exit_and_held_releases() {
         "Menu must still work as a modifier"
     );
     s.feed([RawEvent::Up(Btn::Menu)], 125);
+    assert!(s.app().input_test().is_some(), "a Menu tap exited");
+    // A new hold must not inherit time from the tap, and repeated Down must not reset it.
+    s.feed([RawEvent::Down(Btn::Menu)], 500);
+    s.feed([RawEvent::Down(Btn::Menu)], 500 + MENU_HOLD_MS - 1);
+    assert!(
+        s.app().input_test().is_some(),
+        "exited before the hold boundary"
+    );
+    s.feed([], 500 + MENU_HOLD_MS);
     assert!(s.app().input_test().is_none());
     s.feed(
         [
@@ -136,7 +145,7 @@ fn the_screen_uses_saved_remaps_and_swallows_exit_and_held_releases() {
             RawEvent::Up(Btn::L1),
             RawEvent::Up(Btn::R2),
         ],
-        130,
+        500 + MENU_HOLD_MS + 1,
     );
     s.feed([], 2000);
     assert_eq!(
@@ -145,6 +154,13 @@ fn the_screen_uses_saved_remaps_and_swallows_exit_and_held_releases() {
         "an exit release escaped"
     );
     assert!(!s.has_core());
+    s.feed([RawEvent::Down(Btn::A), RawEvent::Up(Btn::A)], 2100);
+    s.feed([], 3000);
+    assert!(
+        s.app().input_test().is_some(),
+        "a previous hold survived reopen"
+    );
+    assert_eq!(s.app().input_test().unwrap().mask().0, 0);
 }
 
 #[test]
@@ -166,6 +182,14 @@ fn menu_bindings_are_testable_and_shortcuts_are_reported_but_never_executed() {
     s.feed([RawEvent::Up(Btn::R1), RawEvent::Up(Btn::Select)], 130);
     s.feed([RawEvent::Down(Btn::Menu)], 1000);
     s.feed([RawEvent::Up(Btn::Menu)], 1100);
+    assert!(s.app().input_test().is_some());
+    // Start a fresh modifier outside the production double-tap window.
+    s.feed([RawEvent::Down(Btn::Menu)], 1500);
+    s.feed([RawEvent::Down(Btn::L1)], 1510);
+    assert_eq!(s.app().input_test().unwrap().mask().0, ButtonMask::R);
+    s.feed([], 1500 + MENU_HOLD_MS - 1);
+    assert!(s.app().input_test().is_some());
+    s.feed([RawEvent::Up(Btn::Menu)], 1500 + MENU_HOLD_MS);
     assert!(s.app().input_test().is_none());
 }
 
@@ -325,6 +349,22 @@ fn authored_evdev_events_render_separately_from_ps1_actions_and_both_normalized_
     assert_eq!(f.app().input_test().unwrap().mask().0, ButtonMask::B);
     input.events.push(RawEvent::Up(Btn::B));
     f.advance_at(&mut input, 40, 0.0);
+    assert!(input.monitoring);
+    assert_eq!(f.app().input_test().unwrap().mask().0, 0);
+    assert!(f
+        .app()
+        .input_test()
+        .unwrap()
+        .lines()
+        .join("\n")
+        .contains("Hold Menu (1 second): Back"));
+    capture(&mut f, &mut c, "b-released", 720);
+    input.events.push(RawEvent::Down(Btn::Menu));
+    f.advance_at(&mut input, 50, 0.0);
+    f.advance_at(&mut input, 50 + MENU_HOLD_MS - 1, 0.0);
+    assert!(f.app().input_test().is_some());
+    capture(&mut f, &mut c, "menu-held", 720);
+    f.advance_at(&mut input, 50 + MENU_HOLD_MS, 0.0);
     assert!(!input.monitoring);
     assert!(f.app().input_test().is_none());
 

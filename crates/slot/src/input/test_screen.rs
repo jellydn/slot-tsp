@@ -1,5 +1,5 @@
 use slot_gfx::{Compositor, Draw, TexId, OUT_H};
-use slot_input::{Action, Context, Gestures, Millis, PhysicalEvent, RawEvent};
+use slot_input::{Action, Btn, Context, Gestures, Millis, PhysicalEvent, RawEvent, MENU_HOLD_MS};
 use slot_retro::{ButtonMask, Controller};
 use slot_store::{CarouselKeys, Controls, Core, Platform, ShortcutKeys};
 
@@ -19,6 +19,7 @@ pub struct InputTest {
     logical: String,
     shortcut: String,
     seen: u16,
+    menu_down_at: Option<Millis>,
     pub(crate) sticks: [[i16; 2]; 2],
 }
 
@@ -53,6 +54,7 @@ impl InputTest {
             logical: "Waiting for a button".into(),
             shortcut: "None".into(),
             seen: 0,
+            menu_down_at: None,
             sticks: [[0; 2]; 2],
         }
     }
@@ -72,17 +74,33 @@ impl InputTest {
         let mut back = false;
         for &ev in events {
             self.logical = format!("{ev:?}");
+            // Reserve the hold independently of shortcut/chord recognition so exit is
+            // still available while testing a Menu modifier or repeated Menu presses.
+            match ev {
+                RawEvent::Down(Btn::Menu) => {
+                    self.menu_down_at.get_or_insert(now);
+                }
+                RawEvent::Up(Btn::Menu) => {
+                    back |= self
+                        .menu_down_at
+                        .take()
+                        .is_some_and(|since| now.saturating_sub(since) >= MENU_HOLD_MS);
+                }
+                _ => {}
+            }
             for action in self.gestures.feed(ev, now) {
-                back |= self.apply(action);
+                self.apply(action);
             }
         }
         for action in self.gestures.tick(now) {
-            back |= self.apply(action);
+            self.apply(action);
         }
-        back
+        back || self
+            .menu_down_at
+            .is_some_and(|since| now.saturating_sub(since) >= MENU_HOLD_MS)
     }
 
-    fn apply(&mut self, action: Action) -> bool {
+    fn apply(&mut self, action: Action) {
         self.pad.apply(action);
         self.seen |= self.mask().0;
         if !matches!(
@@ -94,7 +112,6 @@ impl InputTest {
         ) {
             self.shortcut = format!("{action:?} (not executed)");
         }
-        matches!(action, Action::QuickMenu | Action::Eject)
     }
 
     pub fn mask(&self) -> ButtonMask {
@@ -183,7 +200,7 @@ impl InputTest {
         } else {
             "Axes after deadzone; center = 0.00".into()
         });
-        lines.push("B release / Menu tap: Back".into());
+        lines.push("Hold Menu (1 second): Back".into());
         lines.push("Game input blocked. No bindings are changed.".into());
         lines
     }

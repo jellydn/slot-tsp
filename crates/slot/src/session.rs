@@ -227,7 +227,7 @@ impl Session {
                     _ => {}
                 }
             }
-            if back || events.contains(&RawEvent::Up(Btn::B)) {
+            if back {
                 self.app.input_test = None;
             }
             self.gestures = Gestures::new();
