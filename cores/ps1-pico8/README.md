@@ -211,12 +211,16 @@ No GPU driver or firmware substitution is required by these software recipes.
   shelves; launching requires the matching library. FAT32 files must be smaller
   than 4 GiB.
 
-## Input Test (source follow-up, not in test.11)
+## Input Test (experimental test.12)
 
 Select a PS1 cart on the shelf, then open **Menu → Controls → Input Test**.
 The heading shows that cart's selected core and the saved Digital/DualShock
 setting. With another platform selected, it says no PS1 cart is selected.
 This screen rehearses the shared PS1 mapping; it does not load or test a core.
+Test both PCSX and Swan selections, each with Digital and DualShock settings.
+See [test.12 release notes](../../knulli/RELEASE-STOCK-0.3.0-test.12.md).
+The BOTH-core physical binding root cause remains unresolved. Early boot logo,
+volume synchronization, automatic PS1 art and speed/audio issues are unchanged.
 
 - Press and release each D-pad, face, Start/Select and L1/L2/R1/R2 button.
   Compare the raw node/type/code/value on the left with the logical edge and

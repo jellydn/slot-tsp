@@ -12,7 +12,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-VERSION = "stock-tsp-0.3.0-test.11"
+VERSION = "stock-tsp-0.3.0-test.12"
 BASE = "7d14cc6c9b4017a5dc2739c5ea54279a70f7a14b"
 IMAGE = "rust@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9"
 SWAN_COMMIT = "631f0fb31b809e0f889d7c551fe695788e39c1d3"

@@ -6,6 +6,25 @@ fixes convention used by [jellydn/VoiceInk](https://github.com/jellydn/VoiceInk)
 
 ## [2026-11] - Sync & Fixes
 
+### Experimental prerelease — stock-tsp-0.3.0-test.12
+
+- Add Menu → Controls → Input Test: observed evdev identity is separate from
+  logical edges and effective PS1 mapping. Show buttons, normalized sticks,
+  center/availability, selected core and Digital/DualShock setting. TSP has
+  no physical L3/R3; triggers retain their raw axis identity.
+- Reuse production gestures/bindings for the preview, block game/shortcut
+  forwarding, and return on B release or plain Menu tap. Do not auto-remap.
+  The BOTH-core physical binding root cause is not established or fixed.
+- Rebuild the stock ARM64 frontend with the test.12 label from committed
+  source. Preserve test.11 core/source/licence/web/startup bytes and its
+  clean-extraction empty Logs fix. This is not a renamed test.11 executable.
+- Owner reports test.11 works and PICO art is good. Preserve that art path,
+  PCSX default and Swan Software isolated-card/disabled-state safeguards.
+  Early stock logo, volume sync, automatic PS1 art and speed/audio stay open.
+- Keep shared-context attachment WIP out of the release. Existing committed
+  graphics diagnostics are source-only; no production hardware integration,
+  SD/device operation or merge is part of this release. Stable 0.2 stays Latest.
+
 ### Draft milestone — stock-tsp-0.3.0-test.9, not hardware accepted
 
 - Combine the local label/rewind work with optional SwanStation software

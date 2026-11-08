@@ -1,4 +1,4 @@
-# Combined handheld test — stock-tsp-0.3.0-test.11
+# Combined handheld test — stock-tsp-0.3.0-test.12
 
 **Not hardware accepted. Do not overwrite an unknown card baseline.** This
 document is a test plan, not permission for an agent to install or operate the
@@ -27,7 +27,25 @@ separate from device operation; a mounted card alone is not approval.
   BIOS, saves, states, settings, pairing data and splash overrides. The ZIP
   contains no user content. Never hot-replace the running executable.
 - [ ] After a separately approved copy and safe eject, check the displayed build
-  label is `stock-tsp-0.3.0-test.11`. Keep the previous payload for rollback.
+  label is `stock-tsp-0.3.0-test.12`. Keep the previous payload for rollback.
+
+## Input Test — owner-controlled diagnostic, not a binding fix
+
+- [ ] Select a PS1 cart. Repeat with PCSX and Swan, each in Digital and
+  DualShock mode. Open Menu → Controls → Input Test. This previews the selected
+  settings without loading a core; correct preview is not gameplay acceptance.
+- [ ] Press/release D-pad, face buttons, Select/Start and L1/L2/R1/R2 separately.
+  Compare raw node/type/code/value with logical edge and effective PS1 action.
+  HELD is current; seen is history. L2/R2 are ABS axes, not digital KEY events.
+- [ ] Move each stick separately, then together, and release to center. Signed
+  values are after the existing deadzone, not calibration. Digital mode ignores
+  gameplay axes. TSP has no physical L3/R3 and no substitute binding is added.
+- [ ] Hold B to inspect it last, then release B to return; plain Menu tap is
+  the alternate exit. Reopen to clear history. Menu-plus-button bindings remain
+  testable. No game/shortcut receives test input and no binding is changed.
+- [ ] For failure, record physical control, raw value, logical edge, effective
+  action, selected core and mode. Root cause is not established. Early stock
+  logo, volume synchronization, automatic PS1 art and speed/audio remain open.
 
 ## Test.9 comparison-only SwanStation (owner-controlled, not executed)
 

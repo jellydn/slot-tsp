@@ -4,6 +4,27 @@
 
 Install stock packages by **copying content to an existing FAT32 card**, not flashing an OS image. Stock kernel, drivers and services stay in place.
 
+## Experimental Input Test — test.12
+
+[stock-tsp-0.3.0-test.12](https://github.com/jellydn/slot-tsp/releases/tag/stock-tsp-0.3.0-test.12)
+adds **Menu → Controls → Input Test** to test.11. It shows observed raw events,
+logical edges, effective PS1 buttons and both normalized sticks. Select a PS1
+cart first; test PCSX and Swan, each in Digital and DualShock mode. Release B
+or tap Menu to return. Test input is not forwarded to a game or app shortcut.
+
+**This is a diagnostic, not a proven shoulder/stick binding fix.** The physical
+BOTH-core root cause, early stock boot logo, startup volume synchronization,
+automatic PS1 art and PS1 speed/audio remain unresolved. The owner reports
+test.11 launches and PICO art is good; this is not full hardware acceptance.
+PICO art, pinned cores, PCSX default and Swan Software save safeguards remain.
+Incomplete shared-context renderer work is excluded; committed diagnostics
+are source-only, not installed runtime integration.
+
+Read the [test.12 notes and installation limits](knulli/RELEASE-STOCK-0.3.0-test.12.md)
+and verify the attached checksums. Back up the card and preserve games, BIOS,
+saves, settings and custom splash. Stable **0.2.0 remains Latest**; test.12 is
+an experimental prerelease, not an OS image or firmware update.
+
 ## Verified status — 5 November 2026
 
 Stable stock package: **[stock-tsp-0.2.0](https://github.com/jellydn/slot-tsp/releases/tag/stock-tsp-0.2.0)** for stock firmware **1.1.1, UI 20251128, kernel 4.9.191**. Download `slot-tsp-stock-0.2.0-fat32.zip` and `SHA256SUMS`. Read the [release notes](knulli/RELEASE-STOCK-0.2.0.md) before installing. This combines built-in RomM and the Wi-Fi wake stale-busy correction. **The rebuilt combined executable is host-verified; hardware acceptance is pending.** “Stable” identifies the release channel, not a hardware pass. The earlier [0.1.0 release](https://github.com/jellydn/slot-tsp/releases/tag/stock-tsp-0.1.0) remains available.

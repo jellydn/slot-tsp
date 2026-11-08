@@ -1,5 +1,28 @@
 # PS1/PICO-8 draft status — 7 November 2026
 
+## Current experimental scope — test.12
+
+The owner requested release test.12 with the verified Input Test diagnostic.
+It adds Menu → Controls → Input Test for BOTH-core shoulder/stick reports,
+not a proven gameplay binding repair. Raw evdev observations, logical edges,
+mapped buttons and signed sticks are separate. B release or plain Menu tap
+returns safely; test input and shortcuts are not dispatched to a game/app.
+
+Test.11 now works according to the owner, and PICO art is explicitly good.
+That is scoped feedback, not full PS1 hardware/speed/audio acceptance. Preserve
+PICO labels, PCSX default, Swan Software isolated cards and disabled states,
+quick states, resume and rewind. Core, web and startup bytes remain test.11.
+Early stock boot logo, volume synchronization and automatic PS1 art remain
+unresolved. No physical TSP L3/R3 or substitute binding is added.
+
+Release source excludes uncommitted Swan shared-context attachment work;
+committed diagnostics remain source-only. Rebuild with a test.12 version from
+the exact committed source, package source/licences/hashes and verify uploaded
+assets. No merge, SD/device action or further renderer integration is approved.
+See [release notes](../../knulli/RELEASE-STOCK-0.3.0-test.12.md).
+
+## Historical test.9 milestone and earlier gates
+
 Test.9 is an owner-test milestone, **not hardware accepted or a stable release**.
 The owner now authorises atomic branch pushes, updates to draft PR #5 and a
 verified prerelease when ready, not a merge or SD deployment. A separately
