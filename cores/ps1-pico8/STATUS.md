@@ -1,5 +1,28 @@
 # PS1/PICO-8 draft status — 7 November 2026
 
+## Test.13 — 8 November 2026
+
+Owner requested an experimental test.13 release and licensed homebrew samples.
+It promotes the verified hold-Menu Input Test change: one second to exit;
+B release and short Menu taps remain testable. This is not an in-game binding
+fix. Standalone physical controls passed according to the owner; gameplay
+acceptance remains pending. See [known issues/TODOs](../../knulli/RELEASE-STOCK-0.3.0-test.13.md).
+
+Keep current pinned cores/PICO art and exclude unfinished Swan renderer work.
+No early-logo or volume change is included. The read-only early-logo backup
+is deferred until the owner ends gameplay; no device access is authorised now.
+Release permission does not authorise an SD update, internal write or merge.
+Historical publication/install status below is superseded only for test.13.
+
+## Local follow-up — hold Menu exit
+
+The owner reports standalone test.12 detects all physical TSP controls.
+This is standalone input-screen success only; in-game PS1 input is pending.
+The requested local follow-up reserves a one-second Menu hold for exit;
+B release and short Menu taps no longer exit. Modifier previews remain usable
+before the threshold. No deployment, publication or live device action is
+authorised by this feedback. The published test.12 behavior below is historical.
+
 ## Current experimental scope — test.12
 
 The owner requested release test.12 with the verified Input Test diagnostic.

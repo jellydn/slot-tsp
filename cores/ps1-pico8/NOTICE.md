@@ -22,8 +22,9 @@ are substituted or removed from the Swan archive.
 
 Slot is GPL-3.0-or-later. See `Slot/LICENSE`. The exact working-tree source
 snapshot, lockfiles, frontend build command, source manifest and local diff
-are supplied under `Slot/Sources/`. The source snapshot, not the unchanged
-checkpoint Git identifier alone, identifies this uncommitted test build.
+are supplied under `Slot/Sources/`. `BUILD-INFO.json` records the source commit
+and whether the snapshot has uncommitted changes. Verify that flag and the
+source archive hash; a checkpoint alone does not identify an altered snapshot.
 
 ## PCSX ReARMed
 

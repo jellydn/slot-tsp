@@ -1,5 +1,22 @@
 # PS1 and PICO-8 core builds
 
+## Current release — test.13
+
+Test.13 includes the Input Test follow-up: **hold Menu for one second to
+return**. B release and short Menu taps stay in the screen, so every button
+can be tested. Preview shortcuts never execute or reach a game. The owner
+reports standalone test.12 detects all physical controls; in-game PS1 binding
+acceptance is still pending. This is not a binding or performance repair.
+
+See [test.13 notes and TODOs](../../knulli/RELEASE-STOCK-0.3.0-test.13.md).
+The frontend is rebuilt with the test.13 label. Keep the existing pinned cores,
+PICO art correction, PCSX default and Swan Software save safeguards. Unfinished
+Swan attachment work is excluded. Early logo, startup volume sync, automatic
+PS1 art and sustained speed/choppy audio remain unresolved. No device or SD
+access is part of release preparation; stable 0.2 remains Latest.
+
+The sections below retain historical evidence and earlier approval limits.
+
 The `stock-tsp-0.3.0-test.9` follow-up combines these cores with native shelves,
 controller UI, disc handling, isolated save directories and RomM download
 routing. Host checks and a combined FAT32 test package are separate from
@@ -234,10 +251,15 @@ volume synchronization, automatic PS1 art and speed/audio issues are unchanged.
   Trigger values 0..255 remain raw ABS values, not digital KEY presses.
   Captured L1/R1 KEY codes are 0x136/0x137; the screen also preserves unknown
   codes, rather than hiding a missing translation. Node numbers can change.
-- Hold B to inspect its action, then release B to go back. A plain Menu tap
-  also exits; Menu-plus-button bindings can still be tested. Test inputs and
+- Hold Menu for one second to go back. B release and short Menu taps stay
+  in the test; Menu-plus-button bindings can still be tested before the hold
+  threshold. The hold exits even with another button held. Test inputs and
   shortcuts do not reach a game or execute app actions. Exit releases are
   consumed, and the screen does not change bindings or write a trace file.
+
+This exit change is a local follow-up to published test.12, which still uses
+B release/Menu tap. The owner reports that standalone test.12 detects all
+physical TSP controls; in-game PS1 bindings are not yet accepted.
 
 If a binding fails, report the physical button, displayed raw code/value,
 logical edge, effective action, selected core and controller setting. Raw
