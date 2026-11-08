@@ -197,7 +197,10 @@ impl Session {
         self.emu.as_ref().map_or(0, EmuHandle::frames_taken)
     }
 
-    pub fn set_analog(&self, sticks: [[i16; 2]; 2]) {
+    pub fn set_analog(&mut self, sticks: [[i16; 2]; 2]) {
+        if let Some(test) = &mut self.app.input_test {
+            test.sticks = sticks;
+        }
         if let Some(emu) = &self.emu {
             let sticks = if self.app.input_context() == slot_input::Context::Game {
                 sticks
@@ -213,6 +216,28 @@ impl Session {
     }
 
     pub fn feed(&mut self, events: impl IntoIterator<Item = RawEvent>, now: Millis) {
+        if let Some(test) = &mut self.app.input_test {
+            let events: Vec<_> = events.into_iter().collect();
+            let back = test.feed(&events, now);
+            // Keep releases from escaping into the menu after the test closes.
+            for &ev in &events {
+                match ev {
+                    RawEvent::Down(b) if !self.captured.contains(&b) => self.captured.push(b),
+                    RawEvent::Up(b) => self.captured.retain(|held| *held != b),
+                    _ => {}
+                }
+            }
+            if back || events.contains(&RawEvent::Up(Btn::B)) {
+                self.app.input_test = None;
+            }
+            self.gestures = Gestures::new();
+            self.entries.clear();
+            self.pad.clear();
+            self.fast = false;
+            self.rewinding = false;
+            self.sync_pad();
+            return;
+        }
         let mut actions = Vec::new();
         let latched = self.gestures.ff_latched();
         self.gestures.set_context(self.app.input_context());
@@ -278,6 +303,9 @@ impl Session {
     }
 
     fn sync_pad(&mut self) {
+        if self.app.input_test.is_some() {
+            self.pad.clear();
+        }
         for btn in self.app.taken_buttons() {
             self.pad.apply(Action::GbaUp(btn));
         }
@@ -318,6 +346,9 @@ impl Session {
     }
 
     fn act(&mut self, action: Action) {
+        if self.app.input_test.is_some() {
+            return;
+        }
         if trace() {
             eprintln!("slot: {action:?} in {:?}", self.app.phase());
         }
@@ -519,7 +550,8 @@ impl Session {
     }
 
     fn held(&self) -> bool {
-        self.app.game_menu_open()
+        self.app.input_test.is_some()
+            || self.app.game_menu_open()
             || self.app.in_game_menu().is_some()
             || self.app.repair_prompt()
             || self.app.shutting_down()

@@ -103,7 +103,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::CONTROL_PAGES.map(QuickRow::label),
-        ["Shelf", "Shortcuts", "In-Game"]
+        ["Shelf", "Shortcuts", "In-Game", "Input Test"]
     );
     assert_eq!(
         QuickRow::SHELF_KEYS.map(QuickRow::label),
@@ -162,7 +162,8 @@ fn the_rows_run_in_the_order_the_user_chose() {
             "Load State on Insert",
             "Save State on Eject",
             "PS1 Controller",
-            "Disc"
+            "Disc",
+            "Performance HUD"
         ]
     );
     let opens: Vec<QuickRow> = QuickRow::ALL.into_iter().filter(|r| r.opens()).collect();
@@ -191,6 +192,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
             QuickRow::Controls,
             QuickRow::ControlsShelf,
             QuickRow::ControlsInGame,
+            QuickRow::InputTest,
             QuickRow::ScreenGeneral,
             QuickRow::UndoSave,
             QuickRow::UndoLoad,

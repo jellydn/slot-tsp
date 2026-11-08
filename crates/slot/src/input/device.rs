@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use slot_input::{Btn, InputSource, Millis, RawEvent};
+use slot_input::{Btn, InputSource, Millis, PhysicalEvent, RawEvent};
 
 use super::evdev::{
     decode, device_name, pad_map, pick_devices, to_raw, Ev, Hat, PadMap, TspAnalog, EVENT_BYTES,
@@ -21,8 +21,10 @@ const LID_POLL_MS: Millis = 150;
 
 pub struct DeviceInput {
     pending: Arc<Mutex<Vec<RawEvent>>>,
+    monitor: Arc<Mutex<Option<std::collections::VecDeque<PhysicalEvent>>>>,
     stick: Arc<AtomicBool>,
     analog: Arc<Mutex<TspAnalog>>,
+    analog_available: bool,
     hall: Option<PathBuf>,
     lid_shut: Option<bool>,
     next_lid_poll: Millis,
@@ -40,8 +42,10 @@ impl DeviceInput {
 
     fn open_traced(dev: &Path, sys: &Path, trace: Option<Arc<Trace>>) -> Self {
         let pending: Arc<Mutex<Vec<RawEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        let monitor = Arc::new(Mutex::new(None));
         let stick = Arc::new(AtomicBool::new(false));
         let analog = Arc::new(Mutex::new(TspAnalog::default()));
+        let mut analog_available = false;
         for node in pick_devices(dev, sys) {
             eprintln!(
                 "slot: input {} ({})",
@@ -54,12 +58,21 @@ impl DeviceInput {
             let steers = stick.clone();
             let name = node.display().to_string();
             let trace = trace.clone();
+            let monitor = monitor.clone();
             let analog = (pad_map() == PadMap::Tsp && device_name(sys, &node) == "TRIMUI Player1")
                 .then(|| analog.clone());
+            analog_available |= analog.is_some();
             let spawned = std::thread::Builder::new()
                 .name(format!("slot-input-{name}"))
                 .spawn(move || {
-                    read_node(&node, &queue, &steers, analog.as_deref(), trace.as_deref())
+                    read_node(
+                        &node,
+                        &queue,
+                        &steers,
+                        analog.as_deref(),
+                        trace.as_deref(),
+                        &monitor,
+                    )
                 });
             if let Err(e) = spawned {
                 eprintln!("slot: input {name}: {e}");
@@ -67,8 +80,10 @@ impl DeviceInput {
         }
         DeviceInput {
             pending,
+            monitor,
             stick,
             analog,
+            analog_available,
             hall: find_hall(Path::new(PSY)),
             lid_shut: None,
             next_lid_poll: 0,
@@ -108,6 +123,7 @@ fn read_node(
     steers: &AtomicBool,
     analog: Option<&Mutex<TspAnalog>>,
     trace: Option<&Trace>,
+    monitor: &Mutex<Option<std::collections::VecDeque<PhysicalEvent>>>,
 ) {
     let label = node
         .file_name()
@@ -134,6 +150,19 @@ fn read_node(
         };
         let mut events = Vec::new();
         for ev in buf[..read].chunks_exact(EVENT_BYTES).filter_map(decode) {
+            if matches!(ev.kind, EV_KEY | EV_ABS) {
+                if let Some(events) = monitor.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    if events.len() == 64 {
+                        events.pop_front();
+                    }
+                    events.push_back(PhysicalEvent {
+                        node: label.clone(),
+                        kind: ev.kind,
+                        code: ev.code,
+                        value: ev.value,
+                    });
+                }
+            }
             if let Some(trace) = trace {
                 trace.event(&label, ev);
             }
@@ -223,6 +252,32 @@ impl DeviceInput {
 }
 
 impl InputSource for DeviceInput {
+    fn analog_available(&self) -> bool {
+        self.analog_available
+    }
+
+    fn set_monitoring(&mut self, enabled: bool) {
+        let mut monitor = self.monitor.lock().unwrap_or_else(|e| e.into_inner());
+        if enabled && monitor.is_none() {
+            *monitor = Some(std::collections::VecDeque::new());
+        } else if !enabled {
+            *monitor = None;
+        }
+    }
+
+    fn physical_available(&self) -> bool {
+        true
+    }
+
+    fn take_physical_events(&mut self) -> Vec<PhysicalEvent> {
+        self.monitor
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+            .map(|events| events.drain(..).collect())
+            .unwrap_or_default()
+    }
+
     fn analog_sticks(&self) -> [[i16; 2]; 2] {
         self.analog
             .lock()

@@ -91,6 +91,7 @@ pub enum QuickRow {
     Controls,
     ControlsShelf,
     ControlsInGame,
+    InputTest,
     LeftStick,
     ScreenGeneral,
     Brightness,
@@ -147,7 +148,7 @@ pub enum QuickRow {
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 135] = [
+    pub const ALL: [QuickRow; 136] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -230,6 +231,7 @@ impl QuickRow {
         QuickRow::Controls,
         QuickRow::ControlsShelf,
         QuickRow::ControlsInGame,
+        QuickRow::InputTest,
         QuickRow::LeftStick,
         QuickRow::ScreenGeneral,
         QuickRow::Brightness,
@@ -348,10 +350,11 @@ impl QuickRow {
         QuickRow::RommDisconnect,
     ];
 
-    pub const CONTROL_PAGES: [QuickRow; 3] = [
+    pub const CONTROL_PAGES: [QuickRow; 4] = [
         QuickRow::ControlsShelf,
         QuickRow::Shortcuts,
         QuickRow::ControlsInGame,
+        QuickRow::InputTest,
     ];
 
     pub const SHELF_KEYS: [QuickRow; 4] = [
@@ -560,9 +563,10 @@ impl QuickRow {
             | QuickRow::RommPairedServer
             | QuickRow::RommLibrary
             | QuickRow::RommDisconnect => &QuickRow::ROMM,
-            QuickRow::ControlsShelf | QuickRow::Shortcuts | QuickRow::ControlsInGame => {
-                &QuickRow::CONTROL_PAGES
-            }
+            QuickRow::ControlsShelf
+            | QuickRow::Shortcuts
+            | QuickRow::ControlsInGame
+            | QuickRow::InputTest => &QuickRow::CONTROL_PAGES,
             QuickRow::Resume
             | QuickRow::UndoSave
             | QuickRow::UndoLoad
@@ -739,6 +743,7 @@ impl QuickRow {
             QuickRow::Controls => "Controls",
             QuickRow::ControlsShelf => "Shelf",
             QuickRow::ControlsInGame => "In-Game",
+            QuickRow::InputTest => "Input Test",
             QuickRow::PlayControls => "Controls",
             QuickRow::Shortcuts => "Shortcuts",
             QuickRow::GameUp
@@ -827,6 +832,7 @@ impl QuickRow {
                 | QuickRow::Controls
                 | QuickRow::ControlsShelf
                 | QuickRow::ControlsInGame
+                | QuickRow::InputTest
                 | QuickRow::PlayControls
                 | QuickRow::Shortcuts
                 | QuickRow::ScreenGba

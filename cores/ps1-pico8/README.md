@@ -211,6 +211,37 @@ No GPU driver or firmware substitution is required by these software recipes.
   shelves; launching requires the matching library. FAT32 files must be smaller
   than 4 GiB.
 
+## Input Test (source follow-up, not in test.11)
+
+Select a PS1 cart on the shelf, then open **Menu → Controls → Input Test**.
+The heading shows that cart's selected core and the saved Digital/DualShock
+setting. With another platform selected, it says no PS1 cart is selected.
+This screen rehearses the shared PS1 mapping; it does not load or test a core.
+
+- Press and release each D-pad, face, Start/Select and L1/L2/R1/R2 button.
+  Compare the raw node/type/code/value on the left with the logical edge and
+  effective PS1 action. `HELD` means active now; `seen` means observed earlier
+  in this test. Reopen the screen to clear that history.
+- Move each stick separately, then together, and release to center. Signed
+  normalized values are after Slot's existing deadzone; this is not calibration.
+  Digital mode deliberately does not send analog axes to a game. TSP has no
+  physical L3/R3. Other sources explicitly mark unavailable raw data or axes.
+- Stock TSP captured axes are left X/Y 0/1, right X/Y 3/4 and triggers 2/5.
+  Trigger values 0..255 remain raw ABS values, not digital KEY presses.
+  Captured L1/R1 KEY codes are 0x136/0x137; the screen also preserves unknown
+  codes, rather than hiding a missing translation. Node numbers can change.
+- Hold B to inspect its action, then release B to go back. A plain Menu tap
+  also exits; Menu-plus-button bindings can still be tested. Test inputs and
+  shortcuts do not reach a game or execute app actions. Exit releases are
+  consumed, and the screen does not change bindings or write a trace file.
+
+If a binding fails, report the physical button, displayed raw code/value,
+logical edge, effective action, selected core and controller setting. Raw
+events without logical edges point to translation; logical edges without the
+expected action point to binding/shortcut handling. Correct preview output
+does not prove real-core or physical gameplay acceptance. Do not auto-remap
+based only on these observations.
+
 ## Tests
 
 `crates/slot-retro/tests/software.rs` contains an authored C ABI fixture and

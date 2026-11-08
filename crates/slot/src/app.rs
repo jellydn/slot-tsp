@@ -563,6 +563,7 @@ pub struct App {
     state: SlotState,
     left_stick: bool,
     controls: Controls,
+    pub(crate) input_test: Option<crate::input::test_screen::InputTest>,
     capture: Option<BindCapture>,
     plugged_face: Option<TexId>,
     binding_faces: HashMap<String, [(TexId, u32, u32); 2]>,
@@ -1016,6 +1017,7 @@ impl App {
             state: SlotState::default(),
             left_stick: false,
             controls: Controls::default(),
+            input_test: None,
             capture: None,
             plugged_face: None,
             binding_faces: HashMap::new(),
@@ -1833,7 +1835,8 @@ impl App {
             | QuickRow::ScGuide
             | QuickRow::Controls
             | QuickRow::ControlsShelf
-            | QuickRow::ControlsInGame => None,
+            | QuickRow::ControlsInGame
+            | QuickRow::InputTest => None,
         }
     }
 
@@ -2761,6 +2764,30 @@ impl App {
         self.controls
     }
 
+    pub fn input_test(&self) -> Option<&crate::input::test_screen::InputTest> {
+        self.input_test.as_ref()
+    }
+
+    fn start_input_test(&mut self) {
+        let selected = self.shelf().carts.get(self.shelf().index);
+        let core = selected.filter(|c| c.platform == Platform::Ps).map(|c| {
+            slot_store::core_for_platform(
+                self.root
+                    .as_deref()
+                    .unwrap_or_else(|| std::path::Path::new(".")),
+                &c.stem,
+                Platform::Ps,
+                self.state.gb_core,
+            )
+        });
+        self.input_test = Some(crate::input::test_screen::InputTest::new(
+            self.controls,
+            self.shortcuts,
+            core,
+            self.ps_controller(),
+        ));
+    }
+
     pub fn shortcuts(&self) -> ShortcutKeys {
         self.shortcuts
     }
@@ -2845,7 +2872,8 @@ impl App {
     }
 
     pub fn input_context(&self) -> slot_input::Context {
-        let overlaid = self.game_menu_open()
+        let overlaid = self.input_test.is_some()
+            || self.game_menu_open()
             || self.in_game_menu().is_some()
             || self.repair_prompt()
             || self.shutting_down();
@@ -3266,7 +3294,10 @@ impl App {
     }
 
     pub fn left_stick_dpad(&self) -> bool {
-        self.left_stick && self.state.left_stick_dpad && self.playing_platform() != Platform::Ps
+        self.input_test.is_none()
+            && self.left_stick
+            && self.state.left_stick_dpad
+            && self.playing_platform() != Platform::Ps
     }
 
     pub fn ps_controller(&self) -> slot_retro::Controller {
@@ -3860,6 +3891,9 @@ impl App {
     }
 
     fn quick_menu_input(&mut self, row: QuickRow, action: Action) {
+        if row == QuickRow::InputTest && action == Action::GbaDown(Btn::A) {
+            return self.start_input_test();
+        }
         if self.stock_power_owned {
             match (row, action) {
                 (QuickRow::DeviceRestart, Action::GbaDown(Btn::A)) => {
@@ -4159,6 +4193,7 @@ impl App {
             | QuickRow::DeviceRestart
             | QuickRow::DeviceShutdown
             | QuickRow::DeviceLeds
+            | QuickRow::InputTest
             | QuickRow::LidOff => {}
         }
     }
@@ -4408,6 +4443,7 @@ impl App {
             | QuickRow::DeviceRestart
             | QuickRow::DeviceShutdown
             | QuickRow::DeviceLeds
+            | QuickRow::InputTest
             | QuickRow::Screen
             | QuickRow::Game
             | QuickRow::Resume

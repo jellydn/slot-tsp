@@ -74,6 +74,7 @@ pub struct Frontend {
     wallpaper: WallpaperSync,
     game_bezel: BezelSync,
     performance: PerformanceHud,
+    input_test_view: crate::input::test_screen::InputTestView,
     look: Option<ShelfLook>,
     link_shot: Option<TexId>,
     link_shot_size: (u32, u32),
@@ -634,6 +635,7 @@ impl Frontend {
             wallpaper: WallpaperSync::default(),
             game_bezel: BezelSync::default(),
             performance: PerformanceHud::default(),
+            input_test_view: crate::input::test_screen::InputTestView::default(),
             look: None,
             link_shot: None,
             link_shot_size: (0, 0),
@@ -1088,6 +1090,11 @@ impl Frontend {
         if self.draw_rebuild(compositor) {
             return;
         }
+        if let Some(test) = self.session.app().input_test() {
+            self.input_test_view
+                .draw(test, compositor, self.session.app().canvas().w);
+            return;
+        }
         if let Some([r, g, b]) = self.session.app().blank_panel() {
             let px = (slot_gfx::SRC_W * slot_gfx::SRC_H) as usize;
             compositor.upload_game(&[b, g, r, 0xff].repeat(px));
@@ -1410,11 +1417,17 @@ impl Frontend {
 
     pub fn advance(&mut self, input: &mut dyn InputSource) {
         let now = self.now();
+        input.set_monitoring(self.session.app().input_test().is_some());
         let events = input.poll(now);
         if self.rebuild.as_ref().is_some_and(Rebuild::on_screen) {
             return;
         }
         self.session.feed(events, now);
+        if let Some(test) = &mut self.session.app_mut().input_test {
+            test.observe(input.physical_available(), input.take_physical_events());
+            test.analog_available = input.analog_available();
+        }
+        input.set_monitoring(self.session.app().input_test().is_some());
         self.session.set_analog(input.analog_sticks());
         let dt = self.last.elapsed().as_secs_f32();
         self.last = Instant::now();
@@ -1458,8 +1471,14 @@ impl Frontend {
     }
 
     pub fn advance_at(&mut self, input: &mut dyn InputSource, now: Millis, dt: f32) {
+        input.set_monitoring(self.session.app().input_test().is_some());
         let events = input.poll(now);
         self.session.feed(events, now);
+        if let Some(test) = &mut self.session.app_mut().input_test {
+            test.observe(input.physical_available(), input.take_physical_events());
+            test.analog_available = input.analog_available();
+        }
+        input.set_monitoring(self.session.app().input_test().is_some());
         self.session.set_analog(input.analog_sticks());
         self.session.update(dt);
     }

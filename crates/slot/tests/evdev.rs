@@ -198,6 +198,66 @@ fn no_trace_file_is_written_unless_one_was_asked_for() {
 }
 
 #[test]
+fn input_screen_observes_unmapped_raw_events_only_while_open_with_bounded_memory() {
+    use slot_input::InputSource;
+    use std::io::Write;
+    use std::os::unix::ffi::OsStrExt;
+    use std::time::{Duration, Instant};
+    let d = input_tree();
+    let node = d.path().join("dev/input/event1");
+    // A disposable FIFO exercises the real reader, never /dev/input or an injected kernel event.
+    fs::remove_file(&node).unwrap();
+    let name = std::ffi::CString::new(node.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let card = tempfile::tempdir().unwrap();
+    let mut input = slot::input::DeviceInput::open_in(
+        &d.path().join("dev/input"),
+        &d.path().join("sys/class/input"),
+        card.path(),
+        false,
+    );
+    input.set_monitoring(true);
+    let mut writer = fs::OpenOptions::new().write(true).open(&node).unwrap();
+    let mut bytes = Vec::new();
+    for value in 0..100 {
+        bytes.extend(packet(0x03, 0x02, value));
+    }
+    bytes.extend(packet(EV_KEY, 0x2ff, 1)); // Unknown code must remain visible.
+    bytes.extend(packet(EV_KEY, CODE_R1, 1));
+    writer.write_all(&bytes).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if input.poll(0).contains(&RawEvent::Down(Btn::R1)) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "authored reader did not reach its final event"
+        );
+        std::thread::yield_now();
+    }
+    let raw = input.take_physical_events();
+    assert_eq!(raw.len(), 64);
+    assert_eq!((raw[0].kind, raw[0].code, raw[0].value), (0x03, 0x02, 38));
+    assert_eq!(
+        (raw[62].kind, raw[62].code, raw[62].value),
+        (EV_KEY, 0x2ff, 1)
+    );
+    assert!(raw.iter().all(|e| e.node == "event1"));
+    input.set_monitoring(false);
+    writer.write_all(&packet(EV_KEY, CODE_R1, 0)).unwrap();
+    loop {
+        if input.poll(1).contains(&RawEvent::Up(Btn::R1)) {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(input.take_physical_events().is_empty());
+    assert!(!card.path().join("Logs/input-trace.log").exists());
+}
+
+#[test]
 fn the_pad_poll_rate_follows_the_platform_policy() {
     let d = input_tree();
     let sys = d.path().join("sys/class/input");
