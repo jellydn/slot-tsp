@@ -2577,6 +2577,10 @@ fn upload_rgba(
     }
 }
 
+#[cfg(all(test, target_os = "macos"))]
+#[path = "frontend_ps1_analog_tests.rs"]
+mod ps1_analog_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
