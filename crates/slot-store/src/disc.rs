@@ -54,11 +54,11 @@ fn extension(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
-fn validate_disc(root: &Path, path: &Path) -> io::Result<()> {
+fn disc_references(root: &Path, path: &Path) -> io::Result<Vec<PathBuf>> {
     match extension(path).as_str() {
-        "chd" | "pbp" => Ok(()),
+        "chd" | "pbp" => Ok(Vec::new()),
         "cue" => {
-            let mut tracks = 0;
+            let mut tracks = Vec::new();
             for line in text(path)?.lines() {
                 if line.len() >= 255 || line.contains(['\0', '\t']) {
                     return Err(invalid("CUE lines must fit the core's parser"));
@@ -77,16 +77,15 @@ fn validate_disc(root: &Path, path: &Path) -> io::Result<()> {
                 if Path::new(name).components().count() != 1 {
                     return Err(invalid("track files must be beside their CUE descriptor"));
                 }
-                sibling(root, path, name)?;
-                tracks += 1;
-                if tracks > 99 {
+                tracks.push(sibling(root, path, name)?);
+                if tracks.len() > 99 {
                     return Err(invalid("CUE has more than 99 track files"));
                 }
             }
-            if tracks == 0 {
+            if tracks.is_empty() {
                 return Err(invalid("CUE has no track files"));
             }
-            Ok(())
+            Ok(tracks)
         }
         _ => Err(invalid("PS1 content must be CUE, CHD, PBP or M3U")),
     }
@@ -97,7 +96,7 @@ pub fn contents(root: &Path, path: &Path) -> io::Result<Vec<PathBuf>> {
     let root = root.canonicalize()?;
     let path = inside(&root, path)?;
     if extension(&path) != "m3u" {
-        validate_disc(&root, &path)?;
+        disc_references(&root, &path)?;
         return Ok(vec![path]);
     }
     let mut discs = Vec::new();
@@ -114,11 +113,26 @@ pub fn contents(root: &Path, path: &Path) -> io::Result<Vec<PathBuf>> {
             return Err(invalid("M3U has more than 15 discs"));
         }
         let disc = sibling(&root, &path, line)?;
-        validate_disc(&root, &disc)?;
+        disc_references(&root, &disc)?;
         discs.push(disc);
     }
     if discs.is_empty() {
         return Err(invalid("M3U has no discs"));
     }
     Ok(discs)
+}
+
+/// Read descriptor dependencies with the same limits and syntax as disc loading.
+pub fn references(root: &Path, path: &Path) -> io::Result<Vec<PathBuf>> {
+    let root = root.canonicalize()?;
+    if extension(path) == "cue" {
+        return disc_references(&root, &inside(&root, path)?);
+    }
+    let discs = contents(&root, path)?;
+    let mut references = Vec::new();
+    for disc in &discs {
+        references.extend(disc_references(&root, disc)?);
+    }
+    references.extend(discs);
+    Ok(references)
 }
