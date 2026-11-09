@@ -550,12 +550,25 @@ fn with_the_stick_off_it_presses_nothing() {
 }
 
 #[test]
-fn turning_the_stick_off_mid_tilt_lets_go_on_its_next_move() {
+fn changing_stick_steering_reconciles_a_held_direction_without_another_move() {
     let mut hat = slot::input::evdev::Hat::default();
     hat.steer_with_stick(true);
     assert_eq!(hat.feed(abs(0x02, 4096)), vec![RawEvent::Down(Btn::Right)]);
-    hat.steer_with_stick(false);
-    assert_eq!(hat.feed(abs(0x02, 4000)), vec![RawEvent::Up(Btn::Right)]);
+    assert_eq!(hat.steer_with_stick(false), vec![RawEvent::Up(Btn::Right)]);
+    assert!(hat.feed(abs(0x02, -4000)).is_empty());
+    assert_eq!(hat.steer_with_stick(true), vec![RawEvent::Down(Btn::Left)]);
+    assert!(hat.steer_with_stick(true).is_empty());
+    assert_eq!(
+        hat.feed(abs(0x10, 1)),
+        vec![RawEvent::Up(Btn::Left), RawEvent::Down(Btn::Right)]
+    );
+    assert!(hat.steer_with_stick(false).is_empty());
+    assert!(hat.steer_with_stick(true).is_empty());
+    assert_eq!(
+        hat.feed(abs(0x10, 0)),
+        vec![RawEvent::Up(Btn::Right), RawEvent::Down(Btn::Left)]
+    );
+    assert_eq!(hat.feed(abs(0x02, 0)), vec![RawEvent::Up(Btn::Left)]);
 }
 
 #[test]

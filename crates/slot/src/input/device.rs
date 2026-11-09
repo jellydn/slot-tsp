@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -22,7 +21,7 @@ const LID_POLL_MS: Millis = 150;
 pub struct DeviceInput {
     pending: Arc<Mutex<Vec<RawEvent>>>,
     monitor: Arc<Mutex<Option<std::collections::VecDeque<PhysicalEvent>>>>,
-    stick: Arc<AtomicBool>,
+    hats: Vec<Arc<Mutex<Hat>>>,
     analog: Arc<Mutex<TspAnalog>>,
     analog_available: bool,
     hall: Option<PathBuf>,
@@ -43,7 +42,7 @@ impl DeviceInput {
     fn open_traced(dev: &Path, sys: &Path, trace: Option<Arc<Trace>>) -> Self {
         let pending: Arc<Mutex<Vec<RawEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let monitor = Arc::new(Mutex::new(None));
-        let stick = Arc::new(AtomicBool::new(false));
+        let mut hats = Vec::new();
         let analog = Arc::new(Mutex::new(TspAnalog::default()));
         let mut analog_available = false;
         for node in pick_devices(dev, sys) {
@@ -55,7 +54,8 @@ impl DeviceInput {
             #[cfg(not(feature = "stock-tg5040"))]
             quicken_poll(sys, &node);
             let queue = pending.clone();
-            let steers = stick.clone();
+            let hat = Arc::new(Mutex::new(Hat::for_map(pad_map())));
+            hats.push(hat.clone());
             let name = node.display().to_string();
             let trace = trace.clone();
             let monitor = monitor.clone();
@@ -68,7 +68,7 @@ impl DeviceInput {
                     read_node(
                         &node,
                         &queue,
-                        &steers,
+                        &hat,
                         analog.as_deref(),
                         trace.as_deref(),
                         &monitor,
@@ -81,7 +81,7 @@ impl DeviceInput {
         DeviceInput {
             pending,
             monitor,
-            stick,
+            hats,
             analog,
             analog_available,
             hall: find_hall(Path::new(PSY)),
@@ -120,7 +120,7 @@ fn quicken_poll(sys: &Path, node: &Path) {
 fn read_node(
     node: &Path,
     queue: &Mutex<Vec<RawEvent>>,
-    steers: &AtomicBool,
+    hat: &Mutex<Hat>,
     analog: Option<&Mutex<TspAnalog>>,
     trace: Option<&Trace>,
     monitor: &Mutex<Option<std::collections::VecDeque<PhysicalEvent>>>,
@@ -129,7 +129,6 @@ fn read_node(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| node.display().to_string());
-    let mut hat = Hat::for_map(pad_map());
     let mut file = match File::open(node) {
         Ok(f) => f,
         Err(e) => {
@@ -148,6 +147,9 @@ fn read_node(
                 break;
             }
         };
+        // Keep state changes and their queued edges in the same order as a
+        // steering-policy change, even while this reader is between packets.
+        let mut hat = hat.lock().unwrap_or_else(|e| e.into_inner());
         let mut events = Vec::new();
         for ev in buf[..read].chunks_exact(EVENT_BYTES).filter_map(decode) {
             if matches!(ev.kind, EV_KEY | EV_ABS) {
@@ -174,7 +176,6 @@ fn read_node(
                     if let Some(analog) = analog {
                         events.extend(analog.lock().unwrap_or_else(|e| e.into_inner()).feed(ev));
                     }
-                    hat.steer_with_stick(steers.load(Ordering::Relaxed));
                     events.extend(hat.feed(ev));
                 }
                 _ => events.extend(to_raw(ev)),
@@ -238,7 +239,16 @@ impl Trace {
 
 impl DeviceInput {
     pub fn steer_with_stick(&self, on: bool) {
-        self.stick.store(on, Ordering::Relaxed);
+        for hat in &self.hats {
+            let mut hat = hat.lock().unwrap_or_else(|e| e.into_inner());
+            let events = hat.steer_with_stick(on);
+            if !events.is_empty() {
+                self.pending
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .extend(events);
+            }
+        }
     }
 
     fn read_lid(&self) -> Option<bool> {

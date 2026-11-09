@@ -2243,7 +2243,6 @@ impl App {
         if platform.native() {
             hidden.extend([
                 QuickRow::Turbo,
-                QuickRow::LeftStick,
                 QuickRow::Shader,
                 QuickRow::ColourCorrection,
                 QuickRow::Palette,
@@ -2251,6 +2250,10 @@ impl App {
                 QuickRow::Scale,
                 QuickRow::Stretch,
             ]);
+            if platform != Platform::Ps || self.ps_controller() == slot_retro::Controller::DualShock
+            {
+                hidden.push(QuickRow::LeftStick);
+            }
         }
         if platform == Platform::Pico8 {
             hidden.extend([QuickRow::Rewind, QuickRow::ScRewind]);
@@ -3297,7 +3300,8 @@ impl App {
         self.input_test.is_none()
             && self.left_stick
             && self.state.left_stick_dpad
-            && self.playing_platform() != Platform::Ps
+            && (self.playing_platform() != Platform::Ps
+                || self.ps_controller() == slot_retro::Controller::Digital)
     }
 
     pub fn ps_controller(&self) -> slot_retro::Controller {

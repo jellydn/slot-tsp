@@ -3,6 +3,23 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+static bool (*env)(unsigned, void *);
+#ifdef SLOT_INPUT_FILE_CONTRACT
+#include <stdio.h>
+static unsigned long long report_frame;
+static void report_input(unsigned controller, unsigned buttons, const uint32_t *axes) {
+    const char *directory = NULL;
+    if (!env(31, &directory) || !directory) return;
+    char path[4096], temporary[4096];
+    if (snprintf(path, sizeof(path), "%s/slot-test-input-report.txt", directory) >= (int)sizeof(path)) return;
+    if (snprintf(temporary, sizeof(temporary), "%s/slot-test-input-report.tmp", directory) >= (int)sizeof(temporary)) return;
+    FILE *file = fopen(temporary, "w");
+    if (!file) return;
+    fprintf(file, "%llu %u %u %u %u %u %u\n", ++report_frame, controller, buttons,
+            axes[0], axes[1], axes[2], axes[3]);
+    if (fclose(file) == 0) rename(temporary, path);
+}
+#endif
 
 struct game_info { const char *path; const void *data; size_t size; const char *meta; };
 struct system_info { const char *name, *version, *extensions; bool fullpath, block_extract; };
@@ -11,7 +28,6 @@ struct timing { double fps, rate; };
 struct av_info { struct geometry geometry; struct timing timing; };
 static void (*video)(const void *, unsigned, unsigned, size_t);
 static int16_t (*input)(unsigned, unsigned, unsigned, unsigned);
-static bool (*env)(unsigned, void *);
 static unsigned controller;
 static uint32_t pixels[448][324];
 static uint16_t small[128][132];
@@ -75,6 +91,20 @@ void retro_unload_game(void) {}
 void retro_reset(void) {}
 void retro_run(void) {
     unsigned buttons = (uint16_t)input(0, 1, 0, 256);
+#ifdef SLOT_INPUT_CONTRACT
+    /* Echo all inputs without the geometry-test commands consuming buttons. */
+    memset(pixels, 0, sizeof(pixels));
+    pixels[0][1] = controller;
+    for (unsigned stick = 0; stick < 2; stick++)
+        for (unsigned axis = 0; axis < 2; axis++)
+            pixels[0][2 + stick * 2 + axis] = (uint16_t)input(0, 5, stick, axis);
+    pixels[0][6] = buttons;
+#ifdef SLOT_INPUT_FILE_CONTRACT
+    report_input(controller, buttons, &pixels[0][2]);
+#endif
+    video(pixels, 320, 224, sizeof(pixels[0]));
+    return;
+#endif
     if (buttons & 8) { video(NULL, 320, 224, sizeof(pixels[0])); return; }
     if (buttons & 1) { video(pixels, 320, 224, 2); return; }
     if (buttons & 4) { video(pixels, 4096, 224, sizeof(pixels[0])); return; }

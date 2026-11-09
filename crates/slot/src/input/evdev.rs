@@ -143,8 +143,12 @@ impl Hat {
         }
     }
 
-    pub fn steer_with_stick(&mut self, on: bool) {
+    pub fn steer_with_stick(&mut self, on: bool) -> Vec<RawEvent> {
+        let was = [self.held(0), self.held(1)];
         self.steers = on;
+        (0..2)
+            .flat_map(|axis| self.changes(axis, was[axis]))
+            .collect()
     }
 
     pub fn feed(&mut self, ev: Ev) -> Vec<RawEvent> {
@@ -153,7 +157,6 @@ impl Hat {
             v if v < -STICK_DEADZONE => -1,
             _ => 0,
         };
-        let steer = |v: i32| if self.steers { tilt(v) } else { 0 };
         let (lsx, lsy) = match self.map {
             PadMap::Anbernic => (ABS_LSX, ABS_LSY),
             PadMap::Tsp => (ABS_X, ABS_Y),
@@ -161,8 +164,8 @@ impl Hat {
         let (axis, from_stick, value) = match ev.code {
             ABS_HAT0X => (0, false, ev.value.signum()),
             ABS_HAT0Y => (1, false, ev.value.signum()),
-            c if c == lsx => (0, true, steer(ev.value)),
-            c if c == lsy => (1, true, steer(ev.value)),
+            c if c == lsx => (0, true, tilt(ev.value)),
+            c if c == lsy => (1, true, tilt(ev.value)),
             _ => return Vec::new(),
         };
         let was = self.held(axis);
@@ -170,6 +173,10 @@ impl Hat {
             true => self.stick[axis] = value,
             false => self.hat[axis] = value,
         }
+        self.changes(axis, was)
+    }
+
+    fn changes(&self, axis: usize, was: i32) -> Vec<RawEvent> {
         let now = self.held(axis);
         if now == was {
             return Vec::new();
@@ -188,7 +195,7 @@ impl Hat {
 
     fn held(&self, axis: usize) -> i32 {
         match self.hat[axis] {
-            0 => self.stick[axis],
+            0 if self.steers => self.stick[axis],
             hat => hat,
         }
     }
