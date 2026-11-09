@@ -27,13 +27,11 @@ fn press(a: &mut App, btn: Btn) {
 
 fn go_to(a: &mut App, row: QuickRow) {
     a.apply(Action::QuickMenu);
-    let path: &[QuickRow] = match row.page() {
-        p if p == QuickRow::PLAY => &[],
-        p if p == QuickRow::SETTINGS => &[QuickRow::Settings],
-        p if p == QuickRow::PLAY_SCREEN => &[QuickRow::Settings, QuickRow::PlayScreen],
-        _ => &[QuickRow::Settings, QuickRow::PlayGameplay],
-    };
-    for step in path.iter().copied().chain([row]) {
+    let mut path = vec![row];
+    while let Some(parent) = path.last().and_then(|r| r.parent_in_game()) {
+        path.push(parent);
+    }
+    for step in path.into_iter().rev() {
         for _ in 0..12 {
             if a.in_game_menu() == Some(step) {
                 break;
@@ -126,6 +124,10 @@ fn resume_and_b_each_close_it_back_into_the_game() {
 fn performance_hud_is_opt_in_and_does_not_change_saved_settings() {
     let (d, mut a) = playing();
     let before = slot_store::read_slot_state(d.path());
+    let developer = QuickRow::Performance.parent_in_game().unwrap();
+    assert_eq!(developer.label(), "Developer");
+    assert_eq!(developer.parent_in_game(), Some(QuickRow::PlayScreen));
+    assert!(!QuickRow::GAME.contains(&QuickRow::Performance));
     assert!(!a.performance());
     go_to(&mut a, QuickRow::Performance);
     assert_eq!(a.quick_value(QuickRow::Performance), Some(QuickValue::Off));
@@ -307,18 +309,19 @@ fn palette_steps_the_palette_and_asks_the_core() {
 }
 
 #[test]
-fn the_in_game_screen_page_ends_with_brightness_blue_light_saturation_and_contrast() {
+fn the_in_game_screen_page_ends_with_panel_controls_and_developer() {
     let (d, mut a) = playing();
     let (power, backlight) = common::panel(d.path(), std::time::Duration::from_secs(300));
     a.set_power(power);
     let shown = QuickRow::PlayBrightness.shown(&a.in_game_hidden());
     assert_eq!(
-        shown[shown.len() - 4..],
+        shown[shown.len() - 5..],
         [
             QuickRow::PlayBrightness,
             QuickRow::PlayBlueLight,
             QuickRow::PlaySaturation,
-            QuickRow::PlayContrast
+            QuickRow::PlayContrast,
+            QuickRow::PlayDeveloper
         ]
     );
     let before = a.brightness();

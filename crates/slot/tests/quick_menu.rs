@@ -421,15 +421,19 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     open_at(&mut a, QuickRow::Screen);
     press(&mut a, Btn::A);
     assert_eq!(a.quick_menu(), Some(QuickRow::ScreenGeneral));
-    for want in [
-        QuickRow::ScreenGba,
-        QuickRow::ScreenGbc,
-        QuickRow::ScreenGb,
-        QuickRow::ScreenGeneral,
-        QuickRow::ScreenGba,
-        QuickRow::ScreenGbc,
-        QuickRow::ScreenGb,
-    ] {
+    assert_eq!(
+        QuickRow::SCREEN.map(|row| row.label()).as_slice(),
+        [
+            "General",
+            "Game Boy Advance",
+            "Game Boy Color",
+            "Game Boy",
+            "PlayStation",
+            "PICO-8",
+            "Developer"
+        ]
+    );
+    for want in QuickRow::SCREEN.into_iter().cycle().skip(1).take(10) {
         press(&mut a, Btn::Down);
         assert_eq!(
             a.quick_menu(),
@@ -461,6 +465,48 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     assert_eq!(a.quick_menu(), Some(QuickRow::Screen));
     press(&mut a, Btn::B);
     assert_eq!(a.quick_menu(), None);
+}
+
+#[test]
+fn native_screen_pages_edit_only_their_own_bezel_and_developer_is_session_only() {
+    for (platform, row) in [
+        (Platform::Ps, QuickRow::PsBezel),
+        (Platform::Pico8, QuickRow::Pico8Bezel),
+    ] {
+        let (d, mut a, _) = on_carousel();
+        std::fs::create_dir_all(d.path().join("Bezels").join(platform.dir_name())).unwrap();
+        std::fs::write(
+            d.path()
+                .join("Bezels")
+                .join(platform.dir_name())
+                .join("Custom.png"),
+            b"listed fixture",
+        )
+        .unwrap();
+        let mut expected = read_slot_state(d.path());
+        open_at(&mut a, row);
+        press(&mut a, Btn::Right);
+        let pick = BezelPick::File("Custom.png".into());
+        assert_eq!(a.resolved_bezel(platform), pick);
+        match platform {
+            Platform::Ps => expected.bezel_ps = pick,
+            _ => expected.bezel_pico8 = pick,
+        }
+        assert_eq!(read_slot_state(d.path()), expected);
+        while a.quick_menu().is_some() {
+            press(&mut a, Btn::B);
+        }
+        open_at(&mut a, QuickRow::Performance);
+        assert_eq!(QuickRow::Performance.parent(), Some(QuickRow::Developer));
+        press(&mut a, Btn::Right);
+        assert!(a.performance());
+        press(&mut a, Btn::B);
+        assert_eq!(a.quick_menu(), Some(QuickRow::Developer));
+        press(&mut a, Btn::B);
+        assert_eq!(a.quick_menu(), Some(QuickRow::Screen));
+        assert_eq!(read_slot_state(d.path()), expected);
+        assert!(!App::boot(d.path()).performance());
+    }
 }
 
 #[test]

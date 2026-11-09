@@ -145,10 +145,16 @@ pub enum QuickRow {
     PsController,
     PsDisc,
     Performance,
+    Developer,
+    PlayDeveloper,
+    ScreenPs,
+    ScreenPico8,
+    PsBezel,
+    Pico8Bezel,
 }
 
 impl QuickRow {
-    pub const ALL: [QuickRow; 136] = [
+    pub const ALL: [QuickRow; 142] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Screen,
@@ -285,6 +291,12 @@ impl QuickRow {
         QuickRow::PsController,
         QuickRow::PsDisc,
         QuickRow::Performance,
+        QuickRow::Developer,
+        QuickRow::PlayDeveloper,
+        QuickRow::ScreenPs,
+        QuickRow::ScreenPico8,
+        QuickRow::PsBezel,
+        QuickRow::Pico8Bezel,
     ];
 
     pub const MAIN: [QuickRow; 7] = [
@@ -405,12 +417,19 @@ impl QuickRow {
         QuickRow::ScSunlightUp,
     ];
 
-    pub const SCREEN: [QuickRow; 4] = [
+    pub const SCREEN: [QuickRow; 7] = [
         QuickRow::ScreenGeneral,
         QuickRow::ScreenGba,
         QuickRow::ScreenGbc,
         QuickRow::ScreenGb,
+        QuickRow::ScreenPs,
+        QuickRow::ScreenPico8,
+        QuickRow::Developer,
     ];
+
+    pub const DEVELOPER: [QuickRow; 1] = [QuickRow::Performance];
+    pub const SCREEN_PS: [QuickRow; 1] = [QuickRow::PsBezel];
+    pub const SCREEN_PICO8: [QuickRow; 1] = [QuickRow::Pico8Bezel];
 
     pub const SCREEN_GENERAL: [QuickRow; 4] = [
         QuickRow::Brightness,
@@ -446,7 +465,7 @@ impl QuickRow {
         QuickRow::GbStretch,
     ];
 
-    pub const GAME: [QuickRow; 11] = [
+    pub const GAME: [QuickRow; 10] = [
         QuickRow::FastForward,
         QuickRow::FastForwardSound,
         QuickRow::Rewind,
@@ -457,7 +476,6 @@ impl QuickRow {
         QuickRow::EjectSave,
         QuickRow::PsController,
         QuickRow::PsDisc,
-        QuickRow::Performance,
     ];
 
     pub const PLAY: [QuickRow; 9] = [
@@ -478,7 +496,7 @@ impl QuickRow {
         QuickRow::PlayControls,
     ];
 
-    pub const PLAY_SCREEN: [QuickRow; 11] = [
+    pub const PLAY_SCREEN: [QuickRow; 12] = [
         QuickRow::Shader,
         QuickRow::Bezel,
         QuickRow::Scale,
@@ -490,6 +508,7 @@ impl QuickRow {
         QuickRow::PlayBlueLight,
         QuickRow::PlaySaturation,
         QuickRow::PlayContrast,
+        QuickRow::PlayDeveloper,
     ];
 
     pub fn index(self) -> usize {
@@ -504,7 +523,13 @@ impl QuickRow {
             QuickRow::ScreenGeneral
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
-            | QuickRow::ScreenGb => &QuickRow::SCREEN,
+            | QuickRow::ScreenGb
+            | QuickRow::ScreenPs
+            | QuickRow::ScreenPico8
+            | QuickRow::Developer => &QuickRow::SCREEN,
+            QuickRow::Performance => &QuickRow::DEVELOPER,
+            QuickRow::PsBezel => &QuickRow::SCREEN_PS,
+            QuickRow::Pico8Bezel => &QuickRow::SCREEN_PICO8,
             QuickRow::Brightness
             | QuickRow::BlueLight
             | QuickRow::Saturation
@@ -512,7 +537,8 @@ impl QuickRow {
             QuickRow::PlayBrightness
             | QuickRow::PlayBlueLight
             | QuickRow::PlaySaturation
-            | QuickRow::PlayContrast => &QuickRow::PLAY_SCREEN,
+            | QuickRow::PlayContrast
+            | QuickRow::PlayDeveloper => &QuickRow::PLAY_SCREEN,
             QuickRow::GbaShader
             | QuickRow::GbaColourCorrection
             | QuickRow::GbaBlending
@@ -540,8 +566,7 @@ impl QuickRow {
             | QuickRow::AutoLoad
             | QuickRow::EjectSave
             | QuickRow::PsController
-            | QuickRow::PsDisc
-            | QuickRow::Performance => &QuickRow::GAME,
+            | QuickRow::PsDisc => &QuickRow::GAME,
             QuickRow::Wallpaper
             | QuickRow::WallpaperTint
             | QuickRow::DateTime
@@ -597,10 +622,13 @@ impl QuickRow {
         match self.page()[0] {
             QuickRow::DeviceRestart => Some(QuickRow::DeviceSettings),
             QuickRow::ScreenGeneral => Some(QuickRow::Screen),
+            QuickRow::Performance => Some(QuickRow::Developer),
             QuickRow::Brightness => Some(QuickRow::ScreenGeneral),
             QuickRow::GbaShader => Some(QuickRow::ScreenGba),
             QuickRow::GbcShader => Some(QuickRow::ScreenGbc),
             QuickRow::GbShader => Some(QuickRow::ScreenGb),
+            QuickRow::PsBezel => Some(QuickRow::ScreenPs),
+            QuickRow::Pico8Bezel => Some(QuickRow::ScreenPico8),
             QuickRow::FastForward => Some(QuickRow::Game),
             QuickRow::PlayScreen => Some(QuickRow::Settings),
             QuickRow::Shader => Some(QuickRow::PlayScreen),
@@ -618,6 +646,7 @@ impl QuickRow {
 
     pub fn parent_in_game(self) -> Option<QuickRow> {
         match self.parent() {
+            Some(QuickRow::Developer) => Some(QuickRow::PlayDeveloper),
             Some(QuickRow::Game) => Some(QuickRow::PlayGameplay),
             Some(QuickRow::ControlsInGame) => Some(QuickRow::PlayControls),
             parent => parent,
@@ -640,6 +669,7 @@ impl QuickRow {
         match self {
             QuickRow::DeviceSettings => Some(QuickRow::DEVICE[0]),
             QuickRow::Screen => Some(QuickRow::SCREEN[0]),
+            QuickRow::Developer | QuickRow::PlayDeveloper => Some(QuickRow::DEVELOPER[0]),
             QuickRow::Game => Some(QuickRow::GAME[0]),
             QuickRow::Settings => Some(QuickRow::SETTINGS[0]),
             QuickRow::PlayScreen => Some(QuickRow::PLAY_SCREEN[0]),
@@ -657,6 +687,8 @@ impl QuickRow {
             QuickRow::ScreenGba => Some(QuickRow::SCREEN_GBA[0]),
             QuickRow::ScreenGbc => Some(QuickRow::SCREEN_GBC[0]),
             QuickRow::ScreenGb => Some(QuickRow::SCREEN_GB[0]),
+            QuickRow::ScreenPs => Some(QuickRow::SCREEN_PS[0]),
+            QuickRow::ScreenPico8 => Some(QuickRow::SCREEN_PICO8[0]),
             _ => None,
         }
     }
@@ -681,6 +713,7 @@ impl QuickRow {
             QuickRow::FastForward => "Fast Forward",
             QuickRow::FastForwardSound => "Fast Forward Sound",
             QuickRow::Screen => "Screen",
+            QuickRow::Developer | QuickRow::PlayDeveloper => "Developer",
             QuickRow::Rumble => "Rumble",
             QuickRow::LeftStick => "Left Stick as D-Pad",
             QuickRow::ScreenGeneral => "General",
@@ -793,8 +826,11 @@ impl QuickRow {
             QuickRow::ScreenGba => "Game Boy Advance",
             QuickRow::ScreenGbc => "Game Boy Color",
             QuickRow::ScreenGb => "Game Boy",
+            QuickRow::ScreenPs => "PlayStation",
+            QuickRow::ScreenPico8 => "PICO-8",
             QuickRow::GbBezel => "Bezel",
             QuickRow::GbcBezel => "Bezel",
+            QuickRow::PsBezel | QuickRow::Pico8Bezel => "Bezel",
             QuickRow::GbaScale | QuickRow::GbScale | QuickRow::GbcScale | QuickRow::Scale => {
                 "Scale"
             }
@@ -838,7 +874,11 @@ impl QuickRow {
                 | QuickRow::ScreenGba
                 | QuickRow::ScreenGbc
                 | QuickRow::ScreenGb
+                | QuickRow::ScreenPs
+                | QuickRow::ScreenPico8
                 | QuickRow::ScreenGeneral
+                | QuickRow::Developer
+                | QuickRow::PlayDeveloper
                 | QuickRow::Network
                 | QuickRow::Wifi
                 | QuickRow::Networks
@@ -1641,6 +1681,8 @@ pub struct QuickMenu<'a> {
     pub gba_bezel: Option<[(TexId, u32, u32); 2]>,
     pub gb_bezel: Option<[(TexId, u32, u32); 2]>,
     pub gbc_bezel: Option<[(TexId, u32, u32); 2]>,
+    pub ps_bezel: Option<[(TexId, u32, u32); 2]>,
+    pub pico8_bezel: Option<[(TexId, u32, u32); 2]>,
     pub bezel: Option<[(TexId, u32, u32); 2]>,
     pub bound: Option<&'a [Option<FacePair>]>,
     pub description: Option<(TexId, u32, u32)>,
@@ -1714,6 +1756,8 @@ impl QuickMenu<'_> {
                 QuickRow::GbaBezel => self.gba_bezel.map(|c| c[lit as usize]),
                 QuickRow::GbBezel => self.gb_bezel.map(|c| c[lit as usize]),
                 QuickRow::GbcBezel => self.gbc_bezel.map(|c| c[lit as usize]),
+                QuickRow::PsBezel => self.ps_bezel.map(|c| c[lit as usize]),
+                QuickRow::Pico8Bezel => self.pico8_bezel.map(|c| c[lit as usize]),
                 QuickRow::Bezel => self.bezel.map(|c| c[lit as usize]),
                 _ if row.binds() => self
                     .bound

@@ -1493,7 +1493,9 @@ impl App {
     }
 
     pub fn in_game_hidden(&self) -> Vec<QuickRow> {
-        let no_bezel = self.playing_platform().hardware() == Platform::Gba && !self.framed_panel();
+        let no_bezel = self.playing_platform().hardware() == Platform::Gba
+            && !self.framed_panel()
+            && !slot_gfx::wide(self.panel);
         let mut hidden = self.platform_hidden();
         if !self.palette_live {
             hidden.push(QuickRow::Palette);
@@ -1787,6 +1789,12 @@ impl App {
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
             | QuickRow::ScreenGb
+            | QuickRow::Developer
+            | QuickRow::PlayDeveloper
+            | QuickRow::ScreenPs
+            | QuickRow::ScreenPico8
+            | QuickRow::PsBezel
+            | QuickRow::Pico8Bezel
             | QuickRow::GbBezel
             | QuickRow::GbcBezel
             | QuickRow::GbaBezel
@@ -1891,7 +1899,10 @@ impl App {
     }
 
     pub fn bezel_files(&self, platform: Platform) -> Vec<String> {
-        match platform.hardware() == Platform::Gba && !self.framed_panel() {
+        match platform.hardware() == Platform::Gba
+            && !self.framed_panel()
+            && !slot_gfx::wide(self.panel)
+        {
             true => Vec::new(),
             false => self
                 .root()
@@ -1902,7 +1913,7 @@ impl App {
 
     fn bezel_choices(&self, platform: Platform) -> Vec<BezelPick> {
         let mut choices = vec![BezelPick::None];
-        if platform.hardware() != Platform::Gba {
+        if platform.hardware() != Platform::Gba || slot_gfx::wide(self.panel) {
             choices.push(BezelPick::Default);
         }
         if self.framed_panel() && !platform.native() {
@@ -2014,7 +2025,9 @@ impl App {
     }
 
     pub fn bezel_art(&self) -> Option<BezelArt> {
-        if self.playing_platform().native() {
+        if self.playing_platform().native()
+            || (self.playing_platform().hardware() == Platform::Gba && slot_gfx::wide(self.panel))
+        {
             return Some(BezelArt::Default);
         }
         if self.picture_fills() {
@@ -2174,7 +2187,7 @@ impl App {
         if !own {
             hidden.push(QuickRow::WallpaperTint);
         }
-        if !self.framed_panel() {
+        if !self.framed_panel() && !slot_gfx::wide(self.panel) {
             hidden.push(QuickRow::GbaBezel);
         }
         for (row, platform) in [
@@ -4077,11 +4090,15 @@ impl App {
             QuickRow::RommStatus | QuickRow::RommPairedServer => {}
             QuickRow::Screen
             | QuickRow::ScreenGeneral
+            | QuickRow::Developer
+            | QuickRow::PlayDeveloper
             | QuickRow::Game
             | QuickRow::DeviceSettings
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
             | QuickRow::ScreenGb
+            | QuickRow::ScreenPs
+            | QuickRow::ScreenPico8
             | QuickRow::Shortcuts
             | QuickRow::General
             | QuickRow::Network
@@ -4140,6 +4157,8 @@ impl App {
             | QuickRow::GbBezel
             | QuickRow::GbcBezel
             | QuickRow::GbaBezel
+            | QuickRow::PsBezel
+            | QuickRow::Pico8Bezel
             | QuickRow::GbaScale
             | QuickRow::GbScale
             | QuickRow::GbcScale
@@ -4317,11 +4336,19 @@ impl App {
             self.persist();
             return;
         }
-        if let QuickRow::GbaBezel | QuickRow::GbBezel | QuickRow::GbcBezel | QuickRow::Bezel = row {
+        if let QuickRow::GbaBezel
+        | QuickRow::GbBezel
+        | QuickRow::GbcBezel
+        | QuickRow::PsBezel
+        | QuickRow::Pico8Bezel
+        | QuickRow::Bezel = row
+        {
             let platform = match row {
                 QuickRow::GbaBezel => Platform::Gba,
                 QuickRow::GbBezel => Platform::Gb,
                 QuickRow::GbcBezel => Platform::Gbc,
+                QuickRow::PsBezel => Platform::Ps,
+                QuickRow::Pico8Bezel => Platform::Pico8,
                 _ => self.playing_platform(),
             };
             self.cycle_bezel(platform, right);
@@ -4468,6 +4495,12 @@ impl App {
             | QuickRow::ScreenGba
             | QuickRow::ScreenGbc
             | QuickRow::ScreenGb
+            | QuickRow::Developer
+            | QuickRow::PlayDeveloper
+            | QuickRow::ScreenPs
+            | QuickRow::ScreenPico8
+            | QuickRow::PsBezel
+            | QuickRow::Pico8Bezel
             | QuickRow::GbBezel
             | QuickRow::GbcBezel
             | QuickRow::GbaBezel
@@ -5062,7 +5095,10 @@ impl App {
     }
 
     pub fn game_bezel_size(&self) -> (u32, u32) {
-        match self.playing_platform().native() || slot_gfx::framed(self.panel) {
+        match self.playing_platform().native()
+            || slot_gfx::framed(self.panel)
+            || slot_gfx::wide(self.panel)
+        {
             true => self.panel,
             false => (OUT_W, OUT_H),
         }
@@ -5636,6 +5672,8 @@ impl App {
                 gba_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gba)],
                 gb_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gb)],
                 gbc_bezel: self.quick_bezel_faces[bezel_slot(Platform::Gbc)],
+                ps_bezel: self.quick_bezel_faces[bezel_slot(Platform::Ps)],
+                pico8_bezel: self.quick_bezel_faces[bezel_slot(Platform::Pico8)],
                 bezel: None,
                 over_game: false,
                 footer_top: OUT_H as f32,
@@ -5827,6 +5865,8 @@ impl App {
                 gba_bezel: None,
                 gb_bezel: None,
                 gbc_bezel: None,
+                ps_bezel: None,
+                pico8_bezel: None,
                 bezel: self.quick_bezel_faces[bezel_slot(self.playing_platform())],
                 over_game: true,
                 footer_top: OUT_H as f32 - MOUTH_H + self.menu_footer_offset(),

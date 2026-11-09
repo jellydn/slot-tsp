@@ -36,6 +36,7 @@ pub struct Compositor {
     game: GamePass,
     sprites: Sprites,
     game_bezel: Option<TexId>,
+    bezel_background: bool,
     sp_frame: bool,
     game_panel: bool,
     turn: Option<Turn>,
@@ -94,6 +95,7 @@ impl Compositor {
                 game: GamePass::new()?,
                 sprites: Sprites::new()?,
                 game_bezel: None,
+                bezel_background: false,
                 sp_frame: true,
                 game_panel: false,
                 turn: None,
@@ -141,7 +143,7 @@ impl Compositor {
             match *item {
                 Draw::Game => {
                     self.sprites.draw(&items[from..i], &self.quad);
-                    if self.game.native_video() {
+                    if self.game.native_video() || self.bezel_background {
                         if let Some(bezel) = self.panel_bezel() {
                             self.sprites.draw(&[bezel], &self.quad);
                         }
@@ -152,13 +154,16 @@ impl Compositor {
                             c.draw_game_bezel();
                         }
                     });
-                    if let Some(bezel) = self.panel_bezel().filter(|_| !self.game.native_video()) {
+                    if let Some(bezel) = self
+                        .panel_bezel()
+                        .filter(|_| !self.game.native_video() && !self.bezel_background)
+                    {
                         self.sprites.draw(&[bezel], &self.quad);
                     }
                 }
                 Draw::Shot { tex } => {
                     self.sprites.draw(&items[from..i], &self.quad);
-                    if self.game.native_video() {
+                    if self.game.native_video() || self.bezel_background {
                         if let Some(bezel) = self.panel_bezel() {
                             self.sprites.draw(&[bezel], &self.quad);
                         }
@@ -219,8 +224,9 @@ impl Compositor {
         self.game.set_picture(rect);
     }
 
-    pub fn set_game_bezel(&mut self, tex: Option<TexId>) {
+    pub fn set_game_bezel(&mut self, tex: Option<TexId>, background: bool) {
         self.game_bezel = tex;
+        self.bezel_background = background;
     }
 
     pub fn set_sp_frame(&mut self, on: bool) {
@@ -479,9 +485,12 @@ impl Compositor {
     }
 
     fn panel_bezel(&self) -> Option<Draw> {
-        let tex = self
-            .game_bezel
-            .filter(|_| self.game.native_video() || crate::bezel::framed(self.window))?;
+        let tex = self.game_bezel.filter(|_| {
+            self.game.native_video()
+                || self.bezel_background
+                || crate::bezel::framed(self.window)
+                || crate::bezel::wide(self.window)
+        })?;
         let canvas = Canvas::of(self.window);
         Some(Draw::Tex {
             x: 0.0,

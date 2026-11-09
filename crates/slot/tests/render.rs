@@ -177,7 +177,7 @@ fn native_bezels_stay_behind_every_pixel_of_the_picture() {
         let pixels = [17, 83, 229, 255].repeat(size.0 as usize * size.1 as usize);
         for panel in [(720, 480), (640, 480), (1280, 720)] {
             c.fit(panel);
-            c.set_game_bezel(None);
+            c.set_game_bezel(None, false);
             c.begin_frame();
             assert!(c.upload_native_game(&pixels, size, aspect));
             c.draw_list(&[Draw::Game]);
@@ -193,7 +193,7 @@ fn native_bezels_stay_behind_every_pixel_of_the_picture() {
                 ),
             ] {
                 let tex = c.create_texture(panel.0, panel.1, &background);
-                c.set_game_bezel(Some(tex));
+                c.set_game_bezel(Some(tex), false);
                 c.begin_frame();
                 c.draw_list(&[Draw::Game]);
                 let framed = c.read_frame();

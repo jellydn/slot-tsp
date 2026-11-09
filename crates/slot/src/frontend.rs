@@ -1143,7 +1143,11 @@ impl Frontend {
         sync_quick_palette(self.session.app_mut(), compositor, &mut self.quick_palette);
         sync_wallpaper(self.session.app_mut(), compositor, &mut self.wallpaper);
         sync_game_bezel(self.session.app_mut(), compositor, &mut self.game_bezel);
-        compositor.set_game_bezel(self.session.app().shown_game_bezel());
+        compositor.set_game_bezel(
+            self.session.app().shown_game_bezel(),
+            self.session.app().playing_platform().hardware() == Console::Gba
+                && slot_gfx::wide(self.session.app().game_bezel_size()),
+        );
         compositor.set_sp_frame(self.session.app().picture_on_top());
         sync_core_picker(
             self.session.app_mut(),
@@ -2043,7 +2047,7 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
     if state.image.as_ref() != Some(&shown) {
         let rgba = match &shown.1 {
             BezelPick::None | BezelPick::Ags102 => None,
-            BezelPick::Default if platform.native() => {
+            BezelPick::Default if platform.native() || platform.hardware() == Console::Gba => {
                 Some(slot_ui::native_bezel_face(platform, w, h))
             }
             BezelPick::Default => shown

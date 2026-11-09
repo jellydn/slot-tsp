@@ -36,7 +36,11 @@ pub fn game_bezel_face(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
 /// The compositor always draws the uncropped native picture above this background.
 pub fn native_bezel_face(platform: slot_store::Platform, w: u32, h: u32) -> Vec<u8> {
     let pico = platform == slot_store::Platform::Pico8;
-    let picture_w = if pico { h } else { h * 4 / 3 };
+    let picture_w = match platform.hardware() {
+        slot_store::Platform::Gba => h * 3 / 2,
+        slot_store::Platform::Pico8 => h,
+        _ => h * 4 / 3,
+    };
     let side = w.saturating_sub(picture_w) / 2 * 720 / h;
     let mut rgba = Vec::with_capacity(w as usize * h as usize * 4);
     for y in 0..h {
@@ -117,6 +121,7 @@ pub fn default_game_bezel_face(colour: bool, kind: BezelArt, w: u32, h: u32) -> 
     let (src, sw, sh) = art::decode_png_bytes(png)?;
     match kind {
         BezelArt::Default => panel_bezel(&src, (sw, sh), (w, h), true),
+        _ if slot_gfx::wide((w, h)) => panel_bezel(&src, (sw, sh), (w, h), true),
         _ => art::cover_rgba(&src, sw, sh, w, h),
     }
 }
@@ -129,6 +134,39 @@ fn panel_bezel(
     (w, h): (u32, u32),
     extend: bool,
 ) -> Option<Vec<u8>> {
+    if slot_gfx::wide((w, h)) && !slot_gfx::wide((sw, sh)) {
+        // Keep the authored 3:2 frame and its screen opening unchanged. Extend
+        // only its edge grain into the wide panel's otherwise unused columns.
+        let band_w = h * OUT_W / OUT_H;
+        let inner = art::cover_rgba(src, sw, sh, band_w, h)?;
+        let (w, h, band_w) = (w as usize, h as usize, band_w as usize);
+        let left = (w - band_w) / 2;
+        let mut out = vec![0; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let source_x = if x < left || x >= left + band_w {
+                    let distance = if x < left {
+                        left - 1 - x
+                    } else {
+                        x - left - band_w
+                    };
+                    let p = distance % (2 * BEZEL_GRAIN_ROWS);
+                    let grain = p.min(2 * BEZEL_GRAIN_ROWS - 1 - p).min(band_w - 1);
+                    if x < left {
+                        grain
+                    } else {
+                        band_w - 1 - grain
+                    }
+                } else {
+                    x - left
+                };
+                let from = (y * band_w + source_x) * 4;
+                let to = (y * w + x) * 4;
+                out[to..to + 4].copy_from_slice(&inner[from..from + 4]);
+            }
+        }
+        return Some(out);
+    }
     if !slot_gfx::framed((w, h)) || sw * 3 == sh * 4 {
         return art::cover_rgba(src, sw, sh, w, h);
     }

@@ -62,7 +62,7 @@ fn bright(p: [u8; 3]) -> u32 {
 }
 
 #[test]
-fn performance_hud_can_be_enabled_sampled_and_disabled_from_gameplay() {
+fn performance_hud_can_be_enabled_sampled_and_disabled_from_screen_developer() {
     let surface = HeadlessSurface::new().expect("performance HUD needs OpenGL");
     let mut c = Compositor::new(&surface).unwrap();
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
@@ -80,7 +80,8 @@ fn performance_hud_can_be_enabled_sampled_and_disabled_from_gameplay() {
     run_for(&mut f, &mut input, 0.4);
     for row in [
         QuickRow::Settings,
-        QuickRow::PlayGameplay,
+        QuickRow::PlayScreen,
+        QuickRow::PlayDeveloper,
         QuickRow::Performance,
     ] {
         for _ in 0..12 {
@@ -90,6 +91,10 @@ fn performance_hud_can_be_enabled_sampled_and_disabled_from_gameplay() {
             tap(&mut f, &mut input, Btn::Down);
         }
         assert_eq!(f.app().in_game_menu(), Some(row));
+        if row == QuickRow::PlayDeveloper {
+            run_for(&mut f, &mut input, 0.2);
+            composed(&mut f, &mut c, "screen-developer");
+        }
         if row != QuickRow::Performance {
             tap(&mut f, &mut input, Btn::A);
         }
@@ -138,7 +143,8 @@ fn performance_hud_can_be_enabled_sampled_and_disabled_from_gameplay() {
     assert!(f.app().performance());
     for row in [
         QuickRow::Settings,
-        QuickRow::PlayGameplay,
+        QuickRow::PlayScreen,
+        QuickRow::PlayDeveloper,
         QuickRow::Performance,
     ] {
         for _ in 0..12 {
