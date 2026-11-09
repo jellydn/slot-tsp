@@ -19,6 +19,7 @@ mod guides;
 pub mod header_index;
 pub mod ini;
 mod platform;
+mod remove;
 mod ring;
 mod scan;
 mod shots;
@@ -44,6 +45,7 @@ pub use guides::{
     GUIDE_SPOTS_FILE,
 };
 pub use platform::Platform;
+pub use remove::{remove_game, validate_remove_game};
 pub use ring::{is_stamp, StateEntry, StateRing, RING_MAX};
 pub use scan::{initial, is_hidden, listing, scan, scan_platform, sort_key, Cart, StoreError};
 pub use shots::{shot_stamp, ShotDir, ShotEntry, SCREENSHOTS_DIR};

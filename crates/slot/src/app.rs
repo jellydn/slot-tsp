@@ -505,6 +505,12 @@ const UPDATE_HOLD_MS: Millis = 300;
 const UPDATE_SWAP_PAUSE_MS: Millis = 1000;
 const UPDATE_BLINK_MS: Millis = 400;
 
+struct GameRemoval {
+    cart: Cart,
+    confirm: bool,
+    error: Option<String>,
+}
+
 pub struct App {
     phase: Phase,
     performance: bool,
@@ -558,6 +564,8 @@ pub struct App {
     reset_faces: Vec<(TexId, u32, u32)>,
     delete_prompt: bool,
     delete_faces: Vec<(TexId, u32, u32)>,
+    game_removal: Option<GameRemoval>,
+    game_removal_faces: Vec<(TexId, u32, u32)>,
     act_at: Millis,
     root: Option<PathBuf>,
     state: SlotState,
@@ -1012,6 +1020,8 @@ impl App {
             reset_faces: Vec::new(),
             delete_prompt: false,
             delete_faces: Vec::new(),
+            game_removal: None,
+            game_removal_faces: Vec::new(),
             act_at: 0,
             root: None,
             state: SlotState::default(),
@@ -2895,6 +2905,7 @@ impl App {
             || self.shutting_down();
         let shelf = matches!(self.phase, Phase::Shelf)
             && self.core_picker.is_none()
+            && self.game_removal.is_none()
             && !self.repair_prompt
             && self.reset_prompt.is_none()
             && self.studio.is_none()
@@ -2912,6 +2923,17 @@ impl App {
         }
         if let Some(s) = row.shortcut() {
             return self.shortcuts.get(s);
+        }
+        if row == QuickRow::ShelfForget
+            && self.carousel.get(slot_store::CarouselAction::ForgetRecent)
+                == Binding::plain(Device::X)
+            && self
+                .binding_table()
+                .entries()
+                .iter()
+                .any(|e| e.action == Action::DeleteGame)
+        {
+            return None;
         }
         row.carousel_action().and_then(|a| self.carousel.get(a))
     }
@@ -3756,6 +3778,9 @@ impl App {
         if self.forget_prompt {
             return self.forget_input(action);
         }
+        if self.game_removal.is_some() {
+            return self.game_removal_input(action);
+        }
         if self.keyboard.is_some() {
             return self.keyboard_input(action);
         }
@@ -3820,6 +3845,7 @@ impl App {
                 Action::PreviousShelf => self.switch_shelf(-1),
                 Action::NextShelf => self.switch_shelf(1),
                 Action::Favorite => self.toggle_favorite(),
+                Action::DeleteGame => self.open_game_removal(),
                 Action::ForgetRecent if self.shelf_at == RECENTS_AT => self.forget_recent(),
                 Action::GbaDown(Btn::Up) => self.jump_letter(-1),
                 Action::GbaDown(Btn::Down) => self.jump_letter(1),
@@ -5418,6 +5444,91 @@ impl App {
         self.persist();
     }
 
+    fn open_game_removal(&mut self) {
+        let Some(cart) = self.shelf().carts.get(self.shelf().index).cloned() else {
+            return;
+        };
+        self.play_held = None;
+        self.held_dir = None;
+        self.shelf_mut().release_left();
+        self.shelf_mut().release_right();
+        self.game_removal = Some(GameRemoval {
+            cart,
+            confirm: false,
+            error: None,
+        });
+    }
+
+    fn game_removal_input(&mut self, action: Action) {
+        let prompt = self.game_removal.as_mut().unwrap();
+        match action {
+            Action::GbaDown(Btn::B) | Action::QuickMenu => self.game_removal = None,
+            Action::GbaDown(Btn::Left) => prompt.confirm = false,
+            Action::GbaDown(Btn::Right) => prompt.confirm = true,
+            Action::GbaDown(Btn::A) if !prompt.confirm => self.game_removal = None,
+            Action::GbaDown(Btn::A) => {
+                let cart = prompt.cart.clone();
+                let result = self
+                    .root
+                    .as_ref()
+                    .ok_or_else(|| {
+                        std::io::Error::new(std::io::ErrorKind::NotFound, "Library is unavailable")
+                    })
+                    .and_then(|root| slot_store::remove_game(root, &cart));
+                match result {
+                    Ok(()) => {
+                        self.game_removal = None;
+                        if let Some(carts) = self.root.as_ref().and_then(|r| scan(r).ok()) {
+                            self.adopt_rescan(carts, false);
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("slot: game deletion refused: {error}");
+                        let prompt = self.game_removal.as_mut().unwrap();
+                        prompt.confirm = false;
+                        prompt.error = Some(match error.kind() {
+                            std::io::ErrorKind::InvalidInput | std::io::ErrorKind::InvalidData => {
+                                "Shared or unsafe file. Nothing was removed.".into()
+                            }
+                            _ => "File unavailable or not writable. Nothing was removed.".into(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn game_removal_lines(&self) -> Option<Vec<String>> {
+        let prompt = self.game_removal.as_ref()?;
+        let path = prompt.cart.rom.strip_prefix(self.root.as_ref()?).ok()?;
+        let mut lines = vec![
+            "Delete this game?".into(),
+            "Remove only:".into(),
+            path.display().to_string(),
+        ];
+        lines.extend([
+            "Keep saves, cards, states, config and art.".into(),
+            "Keep all referenced discs and tracks.".into(),
+        ]);
+        if let Some(error) = &prompt.error {
+            lines.push(format!("Not deleted: {error}"));
+        }
+        lines.push(
+            if prompt.confirm {
+                "Cancel     > Delete <"
+            } else {
+                "> Cancel <     Delete"
+            }
+            .into(),
+        );
+        Some(lines)
+    }
+
+    pub fn set_game_removal_faces(&mut self, faces: Vec<(TexId, u32, u32)>) {
+        self.game_removal_faces = faces;
+    }
+
     fn forget_recent(&mut self) {
         let Some(cart) = self.shelf().carts.get(self.shelf().index) else {
             return;
@@ -5623,6 +5734,9 @@ impl App {
         }
         if self.forget_prompt {
             return self.draw_prompt(&self.forget_faces, out);
+        }
+        if self.game_removal.is_some() {
+            return self.draw_prompt(&self.game_removal_faces, out);
         }
         if self.delete_prompt {
             return match self.shot_viewer {
@@ -6766,6 +6880,7 @@ impl App {
         self.core_picker = None;
         self.keyboard = None;
         self.forget_prompt = false;
+        self.game_removal = None;
         self.shot_wanted = false;
         if matches!(self.phase, Phase::Doze { .. }) {
             return;
@@ -8950,7 +9065,7 @@ impl App {
         }
         match rescan {
             Some(rescan) => {
-                self.adopt_rescan(rescan.carts);
+                self.adopt_rescan(rescan.carts, true);
                 if !hurried {
                     self.stale_labels = rescan.stale;
                 }
@@ -8996,9 +9111,9 @@ impl App {
         self.state.shelf_cart = disk.shelf_cart;
     }
 
-    fn adopt_rescan(&mut self, carts: Vec<Cart>) {
+    fn adopt_rescan(&mut self, carts: Vec<Cart>, prune_gifts: bool) {
         retain_headers(&carts);
-        if let Some(root) = self.root.clone() {
+        if let Some(root) = self.root.clone().filter(|_| prune_gifts) {
             self.gifts.retain_games(&root, &carts);
         }
         let seats: Vec<(usize, Option<(Platform, String)>)> = self
@@ -9429,7 +9544,7 @@ impl App {
         }
         if !matches!(self.phase, Phase::Unwrap { .. }) {
             if let Some(carts) = self.romm_carts.take() {
-                self.adopt_rescan(carts);
+                self.adopt_rescan(carts, true);
             }
         }
         if !self.romm.paired() || !self.wifi_up() {

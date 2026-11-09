@@ -1,6 +1,7 @@
 use slot_input::{anywhere, Action, Contexts, Entry};
 use slot_store::{
-    Binding, CarouselAction, CarouselKeys, Controls, GameButton, Modifier, Platform, ShortcutKeys,
+    Binding, CarouselAction, CarouselKeys, Controls, Device, GameButton, Modifier, Platform,
+    ShortcutKeys,
 };
 use slot_ui::QuickRow;
 
@@ -78,8 +79,18 @@ impl Table {
     }
 
     pub fn entries(&self) -> Vec<Entry> {
-        self.rows
+        let delete = Binding::plain(Device::X).unwrap();
+        let x_available = !self.rows.iter().any(|r| {
+            r.contexts.meets(Contexts::SHELF)
+                && r.binding == delete
+                && r.action != Some(Action::ForgetRecent)
+        });
+        let mut entries: Vec<_> = self
+            .rows
             .iter()
+            .filter(|r| {
+                !(x_available && r.binding == delete && r.action == Some(Action::ForgetRecent))
+            })
             .filter_map(|r| {
                 r.action.map(|action| Entry {
                     chord: chord(r.binding),
@@ -87,7 +98,16 @@ impl Table {
                     contexts: r.contexts,
                 })
             })
-            .collect()
+            .collect();
+        // A user-assigned X keeps its meaning; only the old default is replaced.
+        if x_available {
+            entries.push(Entry {
+                chord: chord(delete),
+                action: Action::DeleteGame,
+                contexts: Contexts::SHELF,
+            });
+        }
+        entries
     }
 
     pub fn clash(&self, row: QuickRow) -> Option<QuickRow> {

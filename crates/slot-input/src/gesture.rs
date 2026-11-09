@@ -63,6 +63,7 @@ pub enum Action {
     NextShelf,
     Favorite,
     ForgetRecent,
+    DeleteGame,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]

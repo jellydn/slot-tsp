@@ -75,6 +75,8 @@ pub struct Frontend {
     game_bezel: BezelSync,
     performance: PerformanceHud,
     input_test_view: crate::input::test_screen::InputTestView,
+    removal_shown: Option<(u32, Vec<String>)>,
+    removal_textures: Vec<Option<TexId>>,
     look: Option<ShelfLook>,
     link_shot: Option<TexId>,
     link_shot_size: (u32, u32),
@@ -636,6 +638,8 @@ impl Frontend {
             game_bezel: BezelSync::default(),
             performance: PerformanceHud::default(),
             input_test_view: crate::input::test_screen::InputTestView::default(),
+            removal_shown: None,
+            removal_textures: Vec::new(),
             look: None,
             link_shot: None,
             link_shot_size: (0, 0),
@@ -1140,6 +1144,69 @@ impl Frontend {
         sync_quick_network(self.session.app_mut(), compositor, &mut self.quick_network);
         sync_quick_romm(self.session.app_mut(), compositor, &mut self.quick_romm);
         self.networks.sync(self.session.app_mut(), compositor);
+        let removal = self
+            .session
+            .app()
+            .game_removal_lines()
+            .map(|lines| ((self.session.app().canvas().w - 60.0) as u32, lines));
+        if removal != self.removal_shown {
+            if let (Some((w, lines)), Some(font)) = (&removal, slot_ui::text::label_font()) {
+                let w = *w;
+                let mut faces = Vec::new();
+                for px in (12..=20).rev() {
+                    let px = px as f32;
+                    let line_h = font
+                        .horizontal_line_metrics(px)
+                        .map_or(px, |metrics| metrics.new_line_size);
+                    let layouts: Vec<_> = lines
+                        .iter()
+                        .map(|line| {
+                            let layout = slot_ui::text::fit(font, line, w as f32, 32, px, px);
+                            let h = (layout.lines.len() as f32 * line_h).ceil() as u32 + 4;
+                            (layout, h)
+                        })
+                        .collect();
+                    let h = layouts.iter().map(|(_, h)| h).sum::<u32>()
+                        + 12 * layouts.len().saturating_sub(1) as u32;
+                    // Keep the entire filename and warning above the button legends.
+                    if h > OUT_H - 2 * slot_ui::MOUTH_H as u32 - 40 && px > 12.0 {
+                        continue;
+                    }
+                    let mut rgba = vec![0; (w * h * 4) as usize];
+                    let mut y = 0;
+                    for (layout, line_h) in layouts {
+                        let start = (y * w * 4) as usize;
+                        let end = ((y + line_h) * w * 4) as usize;
+                        slot_ui::text::draw_centred(
+                            &mut rgba[start..end],
+                            w,
+                            line_h,
+                            &layout,
+                            [240; 3],
+                        );
+                        y += line_h + 12;
+                    }
+                    faces.push(UndoFace { rgba, w, h });
+                    break;
+                }
+                let [back, choose] = prompt_legends(footer_ink(false), "Cancel", "Choose");
+                faces.extend([back, choose]);
+                self.removal_textures.resize(faces.len(), None);
+                let uploaded = faces
+                    .iter()
+                    .zip(&mut self.removal_textures)
+                    .map(|(face, tex)| {
+                        (
+                            upload_rgba(compositor, tex, face.w, face.h, &face.rgba),
+                            face.w,
+                            face.h,
+                        )
+                    })
+                    .collect();
+                self.session.app_mut().set_game_removal_faces(uploaded);
+            }
+            self.removal_shown = removal;
+        }
         sync_quick_palette(self.session.app_mut(), compositor, &mut self.quick_palette);
         sync_wallpaper(self.session.app_mut(), compositor, &mut self.wallpaper);
         sync_game_bezel(self.session.app_mut(), compositor, &mut self.game_bezel);

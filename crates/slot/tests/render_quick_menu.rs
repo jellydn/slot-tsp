@@ -9,7 +9,9 @@ use slot::frontend::Frontend;
 use slot_gfx::{Compositor, HeadlessSurface, OUT_H, OUT_W};
 use slot_input::{Btn, InputSource, Millis, RawEvent};
 use slot_power::SimPlatform;
-use slot_ui::{quick_row_top, quick_row_top_at, quick_scroll, QuickRow, MOUTH_H, QUICK_VISIBLE};
+use slot_ui::{
+    quick_row_top, quick_row_top_at, quick_scroll, QuickRow, HINT_EDGE, MOUTH_H, QUICK_VISIBLE,
+};
 
 struct Script(VecDeque<Vec<RawEvent>>);
 
@@ -91,7 +93,8 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
     if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
         let path = format!("{dir}/quick-menu-{name}.png");
         let file = std::fs::File::create(&path).expect("create png");
-        let mut e = png::Encoder::new(std::io::BufWriter::new(file), OUT_W, OUT_H);
+        let (w, h) = c.frame_size();
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), w, h);
         e.set_color(png::ColorType::Rgba);
         e.set_depth(png::BitDepth::Eight);
         e.write_header()
@@ -101,6 +104,135 @@ fn composed(f: &mut Frontend, c: &mut Compositor, name: &str) -> Vec<u8> {
         println!("wrote {path}");
     }
     px
+}
+
+#[test]
+fn game_deletion_renders_cancel_delete_and_failure_without_clipping() {
+    let surface = HeadlessSurface::new().expect("delete confirmation needs OpenGL");
+    let mut c = Compositor::new(&surface).unwrap();
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    let name = format!("A{}.gba", " long game filename".repeat(12));
+    let rom = d.path().join("Games/GBA").join(&name);
+    std::fs::write(&rom, vec![0; 256]).unwrap();
+    let mut f = Frontend::boot_with(
+        Box::new(SimPlatform::at(d.path().to_path_buf())),
+        Box::new(slot::audio::StubSink::draining()),
+    );
+    let mut input = Script(VecDeque::new());
+    tap(&mut f, &mut input, Btn::X);
+    assert!(f
+        .app()
+        .game_removal_lines()
+        .unwrap()
+        .iter()
+        .any(|l| l.ends_with(&name)));
+    for (state, button) in [
+        ("cancel", None),
+        ("delete", Some(Btn::Right)),
+        ("error", Some(Btn::A)),
+    ] {
+        if state == "error" {
+            std::fs::remove_file(&rom).unwrap();
+            std::fs::create_dir(&rom).unwrap();
+        }
+        if let Some(button) = button {
+            tap(&mut f, &mut input, button);
+        }
+        for panel in [(1280, 720), (720, 480), (640, 480)] {
+            f.render(&mut c, panel);
+            let frame = composed(&mut f, &mut c, &format!("delete-game-{state}-{}", panel.0));
+            assert!(
+                frame
+                    .chunks_exact(4)
+                    .filter(|p| p[..3].iter().all(|v| *v > 180))
+                    .count()
+                    > 100
+            );
+            let mut draws = Vec::new();
+            f.app().draw(&mut draws);
+            for draw in draws {
+                if let slot_gfx::Draw::Tex { x, y, w, h, .. } = draw {
+                    // Footer legends include the existing transparent edge padding.
+                    let edge = if y == OUT_H as f32 - MOUTH_H {
+                        HINT_EDGE as f32
+                    } else {
+                        0.0
+                    };
+                    assert!(
+                        x >= 0.0 && x + w - edge <= f.app().canvas().w,
+                        "{state}: horizontal clipping"
+                    );
+                    assert!(
+                        y >= 0.0 && y + h <= OUT_H as f32,
+                        "{state}: vertical clipping"
+                    );
+                    if y != OUT_H as f32 - MOUTH_H {
+                        assert!(
+                            y + h <= OUT_H as f32 - MOUTH_H - 20.0,
+                            "{state}: confirmation overlaps the footer"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(f
+        .app()
+        .game_removal_lines()
+        .unwrap()
+        .iter()
+        .any(|l| l.starts_with("Not deleted:")));
+    assert!(rom.is_dir());
+}
+
+#[test]
+fn screen_pages_render_native_bezel_values_and_the_developer_hud_toggle() {
+    let surface = HeadlessSurface::new().expect("screen settings need OpenGL");
+    let mut c = Compositor::new(&surface).unwrap();
+    let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
+    clocked(d.path());
+    for row in [
+        QuickRow::ScreenPs,
+        QuickRow::PsBezel,
+        QuickRow::Pico8Bezel,
+        QuickRow::Performance,
+    ] {
+        let mut f = Frontend::boot_with(
+            Box::new(SimPlatform::at(d.path().to_path_buf())),
+            Box::new(slot::audio::StubSink::draining()),
+        );
+        f.upload_faces(&mut c);
+        let mut input = Script(VecDeque::new());
+        tap(&mut f, &mut input, Btn::Menu);
+        let mut path = vec![row];
+        while let Some(parent) = path.last().and_then(|r| r.parent()) {
+            path.push(parent);
+        }
+        for (depth, step) in path.into_iter().rev().enumerate() {
+            if depth > 0 {
+                tap(&mut f, &mut input, Btn::A);
+            }
+            for _ in 0..step.position(&f.app().hidden_rows()) {
+                tap(&mut f, &mut input, Btn::Down);
+            }
+        }
+        assert_eq!(f.app().quick_menu(), Some(row));
+        f.render(&mut c, (1280, 720));
+        let px = composed(&mut f, &mut c, &format!("screen-{row:?}"));
+        assert!(
+            px.chunks_exact(4)
+                .filter(|p| p[..3].iter().all(|v| *v > 180))
+                .count()
+                > 100
+        );
+        if row == QuickRow::Performance {
+            tap(&mut f, &mut input, Btn::Right);
+            assert!(f.app().performance());
+            f.render(&mut c, (1280, 720));
+            composed(&mut f, &mut c, "screen-performance-on");
+        }
+    }
 }
 
 #[test]
@@ -1128,14 +1260,19 @@ fn native_game_settings_expose_ps1_controls_and_pico8_states_but_not_rewind() {
 
     let surface = HeadlessSurface::new().expect("headless display");
     let mut c = Compositor::new(&surface).expect("compositor");
-    for (platform, name) in [(Platform::Ps, "ps1"), (Platform::Pico8, "pico8")] {
+    for (platform, name, panel) in [
+        (Platform::Ps, "ps1", (640, 480)),
+        (Platform::Ps, "ps1", (1280, 720)),
+        (Platform::Pico8, "pico8", (640, 480)),
+    ] {
         let d = tmp_root_with_carts(&[]);
         clocked(d.path());
         let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
         f.app_mut().set_platform(platform);
         f.app_mut().set_disc_info(2, 1);
-        f.app_mut().set_panel((640, 480));
-        c.fit((640, 480));
+        f.set_left_stick(true);
+        f.app_mut().set_panel(panel);
+        c.fit(panel);
         f.upload_faces(&mut c);
         let press = |f: &mut Frontend, button| {
             f.app_mut().apply(Action::GbaDown(button));
@@ -1151,10 +1288,25 @@ fn native_game_settings_expose_ps1_controls_and_pico8_states_but_not_rewind() {
         if platform == Platform::Ps {
             assert!(!hidden.contains(&QuickRow::PsController));
             assert!(!hidden.contains(&QuickRow::PsDisc));
+            assert!(!hidden.contains(&QuickRow::LeftStick));
             assert_eq!(
                 f.app().quick_value(QuickRow::PsController),
                 Some(QuickValue::Digital)
             );
+            for _ in 0..QuickRow::LeftStick.position(&hidden) {
+                press(&mut f, Btn::Down);
+            }
+            assert_eq!(f.app().quick_menu(), Some(QuickRow::LeftStick));
+            composed(&mut f, &mut c, &format!("ps1-digital-stick-{}", panel.0));
+            press(&mut f, Btn::Right);
+            assert!(!slot_store::read_slot_state(d.path()).left_stick_dpad);
+            composed(
+                &mut f,
+                &mut c,
+                &format!("ps1-digital-stick-off-{}", panel.0),
+            );
+            press(&mut f, Btn::Right);
+            assert!(slot_store::read_slot_state(d.path()).left_stick_dpad);
             for _ in 0..30 {
                 if f.app().quick_menu() == Some(QuickRow::PsController) {
                     break;
@@ -1165,6 +1317,7 @@ fn native_game_settings_expose_ps1_controls_and_pico8_states_but_not_rewind() {
             press(&mut f, Btn::Right);
             assert_eq!(f.app().ps_controller(), slot_retro::Controller::DualShock);
             assert!(slot_store::read_slot_state(d.path()).ps_dualshock);
+            assert!(f.app().hidden_rows().contains(&QuickRow::LeftStick));
         } else {
             assert!(f.app().may_load_state());
             assert!(!f.app().may_rewind());
@@ -1178,20 +1331,11 @@ fn native_game_settings_expose_ps1_controls_and_pico8_states_but_not_rewind() {
                 Some(QuickValue::Unavailable)
             );
         }
-        f.compose(&mut c);
-        f.compose(&mut c);
-        assert_eq!(c.frame_size(), (640, 480));
-        if let Ok(dir) = std::env::var("SCRATCH_PNG_DIR") {
-            let file =
-                std::fs::File::create(format!("{dir}/native-settings-{name}-640.png")).unwrap();
-            let mut encoder = png::Encoder::new(file, 640, 480);
-            encoder.set_color(png::ColorType::Rgba);
-            encoder.set_depth(png::BitDepth::Eight);
-            encoder
-                .write_header()
-                .unwrap()
-                .write_image_data(&c.read_frame())
-                .unwrap();
-        }
+        composed(
+            &mut f,
+            &mut c,
+            &format!("native-settings-{name}-{}", panel.0),
+        );
+        assert_eq!(c.frame_size(), panel);
     }
 }
