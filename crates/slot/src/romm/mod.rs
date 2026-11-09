@@ -1,4 +1,5 @@
 pub mod api;
+mod bundle;
 pub mod conf;
 pub mod gifts;
 pub mod install;

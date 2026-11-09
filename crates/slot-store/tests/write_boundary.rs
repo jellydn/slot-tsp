@@ -36,5 +36,19 @@ fn sd_boundary_rejects_escape_links_and_replaced_root() {
     std::fs::create_dir(&root).unwrap();
     assert!(fs::write(root.join("new-file"), b"bad").is_err());
     assert!(!root.join("new-file").exists());
+    std::fs::create_dir_all(root.join("Games/GBA")).unwrap();
+    let rom = root.join("Games/GBA/replacement.gba");
+    std::fs::write(&rom, b"replacement card game").unwrap();
+    let cart = slot_store::Cart {
+        platform: slot_store::Platform::Gba,
+        stem: "replacement".into(),
+        rom: rom.clone(),
+        label: None,
+        title: String::new(),
+        code: String::new(),
+        shell: None,
+    };
+    assert!(slot_store::remove_game(&root, &cart).is_err());
+    assert_eq!(std::fs::read(rom).unwrap(), b"replacement card game");
     assert_eq!(std::fs::read(outside).unwrap(), b"unchanged");
 }

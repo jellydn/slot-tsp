@@ -637,6 +637,371 @@ fn rgb(px: &[u8], w: u32, x: usize, y: usize) -> [u8; 3] {
     [px[o], px[o + 1], px[o + 2]]
 }
 
+#[test]
+fn game_boy_bezels_reach_wide_panel_edges_without_resizing_the_picture() {
+    use slot_store::{BezelPick, Platform, Scale, SlotState};
+    let surface = HeadlessSurface::new().expect("Game Boy bezel test needs OpenGL");
+    let mut c = Compositor::new(&surface).unwrap();
+    let mut picture = [0, 0, 0, 255].repeat(240 * 160);
+    for y in 8..152 {
+        for x in 40..200 {
+            picture[(y * 240 + x) * 4..][..4].copy_from_slice(&[37, 139, 211, 255]);
+        }
+    }
+    for (x, y, colour) in [
+        (40, 8, [0, 0, 255, 255]),
+        (192, 8, [0, 255, 0, 255]),
+        (40, 144, [255, 0, 0, 255]),
+        (192, 144, [0, 255, 255, 255]),
+    ] {
+        for row in y..y + 8 {
+            for col in x..x + 8 {
+                picture[(row * 240 + col) * 4..][..4].copy_from_slice(&colour);
+            }
+        }
+    }
+    for platform in [Platform::Gb, Platform::Gbc] {
+        for panel in [(1280, 720), (640, 480)] {
+            for scale in [Scale::Integer, Scale::Fit] {
+                let mut plain = Vec::new();
+                for (kind, pick) in [
+                    ("none", BezelPick::None),
+                    ("default", BezelPick::Default),
+                    ("custom", BezelPick::File("Custom.png".into())),
+                    ("custom-panel", BezelPick::File("Custom.png".into())),
+                ] {
+                    let d = match platform {
+                        Platform::Gbc => common::tmp_root_with_gbc_carts(&["Diagnostic"]),
+                        _ => common::tmp_root_with_gb_carts(&["Diagnostic"]),
+                    };
+                    let custom = d
+                        .path()
+                        .join("Bezels")
+                        .join(platform.dir_name())
+                        .join("Custom.png");
+                    std::fs::create_dir_all(custom.parent().unwrap()).unwrap();
+                    let (aw, ah) = if kind == "custom-panel" || panel.0 == 640 {
+                        panel
+                    } else {
+                        (720, 480)
+                    };
+                    let mut art = [91, 43, 67, 255].repeat((aw * ah) as usize);
+                    let (left, top, width, height) = match (aw, scale) {
+                        (1280, Scale::Integer) => (280, 36, 720, 648),
+                        (1280, _) => (240, 0, 800, 720),
+                        (640, Scale::Integer) => (80, 24, 480, 432),
+                        (640, _) => (53, 0, 534, 480),
+                        (_, Scale::Integer) => (120, 24, 480, 432),
+                        _ => (93, 0, 534, 480),
+                    };
+                    for y in top..top + height {
+                        for x in left..left + width {
+                            art[((y * aw + x) * 4 + 3) as usize] = 0;
+                        }
+                    }
+                    let mut e = png::Encoder::new(std::fs::File::create(&custom).unwrap(), aw, ah);
+                    e.set_color(png::ColorType::Rgba);
+                    e.write_header().unwrap().write_image_data(&art).unwrap();
+                    let original = std::fs::read(&custom).unwrap();
+                    slot_store::write_slot_state(
+                        d.path(),
+                        &SlotState {
+                            cart: Some("Diagnostic".into()),
+                            cart_platform: Some(platform),
+                            clock_set: true,
+                            shader_gb: slot_store::Shader::Off,
+                            shader_gbc: slot_store::Shader::Off,
+                            scale_gb: scale,
+                            scale_gbc: scale,
+                            bezel_gb: pick.clone(),
+                            bezel_gbc: pick,
+                            ..SlotState::default()
+                        },
+                    )
+                    .unwrap();
+                    let mut f = Frontend::boot_with(
+                        Box::new(SimPlatform::at(d.path().to_path_buf())),
+                        Box::new(slot::audio::StubSink::draining()),
+                    );
+                    f.app_mut().set_snapshot(common::StubSnapshot::boxed());
+                    f.app_mut().on_core_ready();
+                    f.app_mut().set_game_ready(true);
+                    for _ in 0..180 {
+                        f.app_mut().update(1.0 / 60.0);
+                    }
+                    f.upload_bezel(&mut c, panel);
+                    c.upload_game(&picture);
+                    f.render(&mut c, panel);
+                    let frame = c.read_frame();
+                    let name =
+                        format!("{}-bezel-{kind}-{scale:?}-{}", platform.dir_name(), panel.0);
+                    write_png(&name, panel.0, panel.1, &frame);
+                    if kind == "none" {
+                        plain = frame.clone();
+                    }
+                    let (w, h) = (panel.0 as usize, panel.1 as usize);
+                    let (left, top, width, height) = match (panel.0, scale) {
+                        (1280, Scale::Integer) => (280, 36, 720, 648),
+                        (1280, _) => (240, 0, 800, 720),
+                        (_, Scale::Integer) => (80, 24, 480, 432),
+                        _ => (53, 0, 534, 480),
+                    };
+                    for (x, y, expected) in [
+                        (left + 10, top + 10, [255, 0, 0]),
+                        (left + width - 11, top + 10, [0, 255, 0]),
+                        (left + 10, top + height - 11, [0, 0, 255]),
+                        (left + width - 11, top + height - 11, [255, 255, 0]),
+                    ] {
+                        // The original frame casts a translucent shadow at its opening.
+                        for (got, want) in rgb(&frame, panel.0, x, y).into_iter().zip(expected) {
+                            assert!(
+                                if want == 0 { got == 0 } else { got >= 150 },
+                                "{name}: picture corner at {x},{y}: {got}, expected {want}"
+                            );
+                        }
+                    }
+                    for (x, y) in [
+                        (w / 2, h / 2),
+                        (w / 2 - 100, h / 2 - 100),
+                        (w / 2 + 100, h / 2 + 100),
+                    ] {
+                        assert_eq!(
+                            rgb(&frame, panel.0, x, y),
+                            [211, 139, 37],
+                            "{name}: picture changed"
+                        );
+                        assert_eq!(rgb(&frame, panel.0, x, y), rgb(&plain, panel.0, x, y));
+                    }
+                    for x in [0, w - 1] {
+                        let edge = rgb(&frame, panel.0, x, h / 2);
+                        match kind {
+                            "none" => assert_eq!(edge, [0, 0, 0], "{name}: intentional padding"),
+                            "custom" | "custom-panel" => {
+                                assert_eq!(edge, [91, 43, 67], "{name}: outer strip")
+                            }
+                            _ => assert!(
+                                edge.iter().any(|c| *c > 20),
+                                "{name}: outer strip {edge:?}"
+                            ),
+                        }
+                    }
+                    assert_eq!(std::fs::read(&custom).unwrap(), original);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn gba_wide_bezels_fill_only_unused_space_and_keep_custom_art() {
+    use slot_store::{BezelPick, Platform, SlotState};
+    let surface = HeadlessSurface::new().expect("GBA bezel test needs OpenGL");
+    let mut c = Compositor::new(&surface).unwrap();
+    let picture = [37, 139, 211, 255].repeat(240 * 160);
+    // Wide panels retain the existing 3:2 fit path for both stored scale choices.
+    for (scale, left, top, pixels) in [
+        (slot_store::Scale::Fit, 100, 0, 1080 * 720),
+        (slot_store::Scale::Integer, 100, 0, 1080 * 720),
+    ] {
+        for (kind, pick) in [
+            ("default", BezelPick::Default),
+            ("none", BezelPick::None),
+            ("custom", BezelPick::File("Custom.png".into())),
+        ] {
+            let d = tmp_root_with_carts(&["Emerald"]);
+            let custom = d.path().join("Bezels/GBA/Custom.png");
+            let mut e = png::Encoder::new(std::fs::File::create(&custom).unwrap(), 1280, 720);
+            e.set_color(png::ColorType::Rgba);
+            e.write_header()
+                .unwrap()
+                .write_image_data(&[91, 43, 67, 255].repeat(1280 * 720))
+                .unwrap();
+            let original = std::fs::read(&custom).unwrap();
+            slot_store::write_slot_state(
+                d.path(),
+                &SlotState {
+                    cart: Some("Emerald".into()),
+                    cart_platform: Some(Platform::Gba),
+                    clock_set: true,
+                    shader_gba: slot_store::Shader::Off,
+                    scale_gba: scale,
+                    bezel_gba: pick.clone(),
+                    ..SlotState::default()
+                },
+            )
+            .unwrap();
+            let mut f = Frontend::boot_with(
+                Box::new(SimPlatform::at(d.path().to_path_buf())),
+                Box::new(slot::audio::StubSink::draining()),
+            );
+            f.app_mut().set_snapshot(common::StubSnapshot::boxed());
+            f.app_mut().on_core_ready();
+            f.app_mut().set_game_ready(true);
+            for _ in 0..180 {
+                f.app_mut().update(1.0 / 60.0);
+            }
+            f.upload_bezel(&mut c, (1280, 720));
+            assert!(!f.app().in_game_hidden().contains(&QuickRow::Bezel));
+            assert_eq!(f.app().resolved_bezel(Platform::Gba), pick);
+            c.upload_game(&picture);
+            f.render(&mut c, (1280, 720));
+            let frame = c.read_frame();
+            assert_eq!(c.frame_size(), (1280, 720));
+            for (x, y) in [(left, top), (1279 - left, 719 - top), (640, 360)] {
+                assert_eq!(
+                    rgb(&frame, 1280, x, y),
+                    [211, 139, 37],
+                    "{kind}: picture changed"
+                );
+            }
+            assert_eq!(
+                frame
+                    .chunks_exact(4)
+                    .filter(|p| p[..3] == [211, 139, 37])
+                    .count(),
+                pixels
+            );
+            for x in [0, left - 1, 1280 - left, 1279] {
+                let pixel = rgb(&frame, 1280, x, 360);
+                match kind {
+                    "none" => assert_eq!(pixel, [0, 0, 0]),
+                    "custom" => assert_eq!(pixel, [91, 43, 67]),
+                    _ => assert_ne!(pixel, [0, 0, 0]),
+                }
+            }
+            assert_eq!(std::fs::read(&custom).unwrap(), original);
+            write_png(
+                &format!("GBA-wide-bezel-{kind}-{scale:?}"),
+                1280,
+                720,
+                &frame,
+            );
+        }
+    }
+}
+
+#[test]
+fn native_frontend_bezels_keep_panel_edges_and_the_whole_picture() {
+    use slot_store::{BezelPick, Platform, SlotState};
+    let surface = HeadlessSurface::new().expect("native bezel test needs OpenGL");
+    let mut c = Compositor::new(&surface).unwrap();
+    let panel = (1280, 720);
+    for (platform, name, left, width, aspect) in [
+        (Platform::Ps, "Game.chd", 160, 320, 4.0 / 3.0),
+        (Platform::Pico8, "Game.p8", 280, 128, 1.0),
+    ] {
+        for (kind, pick) in [
+            ("default", BezelPick::Default),
+            ("none", BezelPick::None),
+            ("custom", BezelPick::File("Edge.png".into())),
+        ] {
+            let d = tempfile::tempdir().unwrap();
+            slot::root::ensure(d.path());
+            std::fs::write(
+                d.path().join("Games").join(platform.dir_name()).join(name),
+                b"fixture",
+            )
+            .unwrap();
+            let path = d
+                .path()
+                .join("Bezels")
+                .join(platform.dir_name())
+                .join("Edge.png");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut background = [47, 57, 67, 255].repeat(1280 * 720);
+            for y in 0..720 {
+                for x in 0..1280 {
+                    if !(24..1256).contains(&x) || !(24..696).contains(&y) {
+                        let colour = if x < 640 {
+                            [191, 37, 59, 255]
+                        } else {
+                            [29, 173, 97, 255]
+                        };
+                        background[(y * 1280 + x) * 4..][..4].copy_from_slice(&colour);
+                    }
+                }
+            }
+            let mut e = png::Encoder::new(std::fs::File::create(path).unwrap(), 1280, 720);
+            e.set_color(png::ColorType::Rgba);
+            e.write_header()
+                .unwrap()
+                .write_image_data(&background)
+                .unwrap();
+            slot_store::write_slot_state(
+                d.path(),
+                &SlotState {
+                    cart: Some(name.into()),
+                    cart_platform: Some(platform),
+                    clock_set: true,
+                    bezel_ps: pick.clone(),
+                    bezel_pico8: pick,
+                    ..SlotState::default()
+                },
+            )
+            .unwrap();
+            let mut f = Frontend::boot_with(
+                Box::new(SimPlatform::at(d.path().to_path_buf())),
+                Box::new(slot::audio::StubSink::draining()),
+            );
+            f.app_mut().set_snapshot(common::StubSnapshot::boxed());
+            f.app_mut().on_core_ready();
+            f.app_mut().set_game_ready(true);
+            for _ in 0..180 {
+                f.app_mut().update(1.0 / 60.0);
+            }
+            f.upload_bezel(&mut c, panel);
+            c.fit(panel);
+            c.set_screen_effect(slot_gfx::ScreenEffect::None);
+            let mut picture = Vec::new();
+            for y in 0..width {
+                for x in 0..width {
+                    picture.extend_from_slice(&[
+                        if x < width / 2 { 211 } else { 73 },
+                        if y < width / 2 { 139 } else { 91 },
+                        37,
+                        255,
+                    ]);
+                }
+            }
+            assert!(c.upload_native_game(&picture, (width, width), aspect));
+            f.compose(&mut c);
+            let frame = c.read_frame();
+            write_png(
+                &format!("{}-frontend-bezel-{kind}", platform.dir_name()),
+                1280,
+                720,
+                &frame,
+            );
+            for (x, y, expected) in [(left, 0, [37, 139, 211]), (1279 - left, 719, [37, 91, 73])] {
+                assert_eq!(
+                    rgb(&frame, 1280, x, y),
+                    expected,
+                    "{platform:?} {kind}: picture corner"
+                );
+            }
+            if kind == "custom" {
+                for (x, y, colour) in [
+                    (0, 0, [191, 37, 59]),
+                    (23, 360, [191, 37, 59]),
+                    (24, 360, [47, 57, 67]),
+                    (1256, 360, [29, 173, 97]),
+                    (1279, 719, [29, 173, 97]),
+                ] {
+                    assert_eq!(
+                        rgb(&frame, 1280, x, y),
+                        colour,
+                        "{platform:?}: custom edge cropped"
+                    );
+                }
+            } else if kind == "none" {
+                assert_eq!(rgb(&frame, 1280, 0, 360), [0, 0, 0]);
+            } else {
+                assert_ne!(rgb(&frame, 1280, 50, 360), [0, 0, 0]);
+            }
+        }
+    }
+}
+
 fn plastic(p: [u8; 3]) -> bool {
     p.iter().all(|c| (0x14..0x80).contains(c))
 }

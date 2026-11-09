@@ -20,6 +20,52 @@ pub const ABS_LSY: u16 = 0x03;
 
 pub const STICK_DEADZONE: i32 = 2048;
 
+/// Stock TRIMUI Player1 ranges captured on TG5040; not an Anbernic axis layout.
+#[derive(Default)]
+pub struct TspAnalog {
+    sticks: [[i16; 2]; 2],
+    triggers: [bool; 2],
+}
+
+impl TspAnalog {
+    pub fn sticks(&self) -> [[i16; 2]; 2] {
+        self.sticks
+    }
+
+    pub fn feed(&mut self, ev: Ev) -> Option<RawEvent> {
+        if ev.kind != EV_ABS {
+            return None;
+        }
+        let axis = match ev.code {
+            0 => Some((0, 0)),
+            1 => Some((0, 1)),
+            3 => Some((1, 0)),
+            4 => Some((1, 1)),
+            _ => None,
+        };
+        if let Some((stick, axis)) = axis {
+            self.sticks[stick][axis] = if (-STICK_DEADZONE..=STICK_DEADZONE).contains(&ev.value) {
+                0
+            } else {
+                ev.value.clamp(-32767, 32767) as i16
+            };
+        } else if matches!(ev.code, 2 | 5) {
+            let index = usize::from(ev.code == 5);
+            let down = ev.value >= 128;
+            if self.triggers[index] != down {
+                self.triggers[index] = down;
+                let button = [Btn::L2, Btn::R2][index];
+                return Some(if down {
+                    RawEvent::Down(button)
+                } else {
+                    RawEvent::Up(button)
+                });
+            }
+        }
+        None
+    }
+}
+
 const LEFT_STICK_TARGETS: [&str; 11] = [
     "rg34xxsp",
     "rg35xxh",
@@ -97,8 +143,12 @@ impl Hat {
         }
     }
 
-    pub fn steer_with_stick(&mut self, on: bool) {
+    pub fn steer_with_stick(&mut self, on: bool) -> Vec<RawEvent> {
+        let was = [self.held(0), self.held(1)];
         self.steers = on;
+        (0..2)
+            .flat_map(|axis| self.changes(axis, was[axis]))
+            .collect()
     }
 
     pub fn feed(&mut self, ev: Ev) -> Vec<RawEvent> {
@@ -107,7 +157,6 @@ impl Hat {
             v if v < -STICK_DEADZONE => -1,
             _ => 0,
         };
-        let steer = |v: i32| if self.steers { tilt(v) } else { 0 };
         let (lsx, lsy) = match self.map {
             PadMap::Anbernic => (ABS_LSX, ABS_LSY),
             PadMap::Tsp => (ABS_X, ABS_Y),
@@ -115,8 +164,8 @@ impl Hat {
         let (axis, from_stick, value) = match ev.code {
             ABS_HAT0X => (0, false, ev.value.signum()),
             ABS_HAT0Y => (1, false, ev.value.signum()),
-            c if c == lsx => (0, true, steer(ev.value)),
-            c if c == lsy => (1, true, steer(ev.value)),
+            c if c == lsx => (0, true, tilt(ev.value)),
+            c if c == lsy => (1, true, tilt(ev.value)),
             _ => return Vec::new(),
         };
         let was = self.held(axis);
@@ -124,6 +173,10 @@ impl Hat {
             true => self.stick[axis] = value,
             false => self.hat[axis] = value,
         }
+        self.changes(axis, was)
+    }
+
+    fn changes(&self, axis: usize, was: i32) -> Vec<RawEvent> {
         let now = self.held(axis);
         if now == was {
             return Vec::new();
@@ -142,7 +195,7 @@ impl Hat {
 
     fn held(&self, axis: usize) -> i32 {
         match self.hat[axis] {
-            0 => self.stick[axis],
+            0 if self.steers => self.stick[axis],
             hat => hat,
         }
     }

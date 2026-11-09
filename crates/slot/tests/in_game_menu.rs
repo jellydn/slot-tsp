@@ -27,13 +27,11 @@ fn press(a: &mut App, btn: Btn) {
 
 fn go_to(a: &mut App, row: QuickRow) {
     a.apply(Action::QuickMenu);
-    let path: &[QuickRow] = match row.page() {
-        p if p == QuickRow::PLAY => &[],
-        p if p == QuickRow::SETTINGS => &[QuickRow::Settings],
-        p if p == QuickRow::PLAY_SCREEN => &[QuickRow::Settings, QuickRow::PlayScreen],
-        _ => &[QuickRow::Settings, QuickRow::PlayGameplay],
-    };
-    for step in path.iter().copied().chain([row]) {
+    let mut path = vec![row];
+    while let Some(parent) = path.last().and_then(|r| r.parent_in_game()) {
+        path.push(parent);
+    }
+    for step in path.into_iter().rev() {
         for _ in 0..12 {
             if a.in_game_menu() == Some(step) {
                 break;
@@ -57,6 +55,61 @@ fn a_tap_of_menu_in_game_opens_on_resume_over_the_running_cart() {
 }
 
 #[test]
+fn native_bezels_are_selectable_and_persist_without_changing_other_systems() {
+    use slot_store::{read_slot_state, write_slot_state, BezelPick, SlotState};
+    for (platform, name) in [(Platform::Ps, "Game.chd"), (Platform::Pico8, "Game.p8")] {
+        let d = tempfile::tempdir().unwrap();
+        slot::root::ensure(d.path());
+        std::fs::write(
+            d.path().join("Games").join(platform.dir_name()).join(name),
+            b"fixture",
+        )
+        .unwrap();
+        let bezels = d.path().join("Bezels").join(platform.dir_name());
+        std::fs::create_dir_all(&bezels).unwrap();
+        std::fs::write(bezels.join("Wood.png"), b"listed fixture").unwrap();
+        write_slot_state(
+            d.path(),
+            &SlotState {
+                cart: Some(name.into()),
+                cart_platform: Some(platform),
+                clock_set: true,
+                ..SlotState::default()
+            },
+        )
+        .unwrap();
+        let mut a = App::boot(d.path());
+        a.set_snapshot(common::StubSnapshot::boxed());
+        a.on_core_ready();
+        for _ in 0..120 {
+            a.update(1.0 / 60.0);
+        }
+        assert_eq!(a.playing_platform(), platform);
+        a.set_panel((1280, 720));
+        assert_eq!(a.game_bezel_size(), (1280, 720));
+        assert_eq!(a.resolved_bezel(platform), BezelPick::Default);
+        assert!(!a.in_game_hidden().contains(&QuickRow::Bezel));
+        go_to(&mut a, QuickRow::Bezel);
+        press(&mut a, Btn::Right);
+        assert_eq!(
+            a.resolved_bezel(platform),
+            BezelPick::File("Wood.png".into())
+        );
+        let state = read_slot_state(d.path());
+        assert_eq!(state.bezel_gba, BezelPick::Ags102);
+        let (changed, other) = if platform == Platform::Ps {
+            (state.bezel_ps, state.bezel_pico8)
+        } else {
+            (state.bezel_pico8, state.bezel_ps)
+        };
+        assert_eq!(changed, BezelPick::File("Wood.png".into()));
+        assert_eq!(other, BezelPick::Default);
+        press(&mut a, Btn::Right);
+        assert_eq!(a.resolved_bezel(platform), BezelPick::None);
+    }
+}
+
+#[test]
 fn resume_and_b_each_close_it_back_into_the_game() {
     for close in [Btn::A, Btn::B] {
         let (_d, mut a) = playing();
@@ -65,6 +118,28 @@ fn resume_and_b_each_close_it_back_into_the_game() {
         assert_eq!(a.in_game_menu(), None, "{close:?}");
         assert!(matches!(a.phase(), Phase::Playing { .. }));
     }
+}
+
+#[test]
+fn performance_hud_is_opt_in_and_does_not_change_saved_settings() {
+    let (d, mut a) = playing();
+    let before = slot_store::read_slot_state(d.path());
+    let developer = QuickRow::Performance.parent_in_game().unwrap();
+    assert_eq!(developer.label(), "Developer");
+    assert_eq!(developer.parent_in_game(), Some(QuickRow::PlayScreen));
+    assert!(!QuickRow::GAME.contains(&QuickRow::Performance));
+    assert!(!a.performance());
+    go_to(&mut a, QuickRow::Performance);
+    assert_eq!(a.quick_value(QuickRow::Performance), Some(QuickValue::Off));
+    press(&mut a, Btn::Right);
+    assert!(a.performance());
+    assert_eq!(a.quick_value(QuickRow::Performance), Some(QuickValue::On));
+    assert_eq!(slot_store::read_slot_state(d.path()), before);
+    press(&mut a, Btn::Left);
+    assert!(!a.performance());
+    press(&mut a, Btn::Right);
+    assert!(!App::boot(d.path()).performance());
+    assert_eq!(slot_store::read_slot_state(d.path()), before);
 }
 
 #[test]
@@ -104,6 +179,12 @@ fn screen_shows_the_palette_only_when_palettes_are_live() {
         a.in_game_hidden(),
         [
             &[
+                QuickRow::GameX,
+                QuickRow::GameY,
+                QuickRow::GameL2,
+                QuickRow::GameR2,
+                QuickRow::PsController,
+                QuickRow::PsDisc,
                 QuickRow::Palette,
                 QuickRow::Bezel,
                 QuickRow::Scale,
@@ -119,6 +200,12 @@ fn screen_shows_the_palette_only_when_palettes_are_live() {
         a.in_game_hidden(),
         [
             &[
+                QuickRow::GameX,
+                QuickRow::GameY,
+                QuickRow::GameL2,
+                QuickRow::GameR2,
+                QuickRow::PsController,
+                QuickRow::PsDisc,
                 QuickRow::Bezel,
                 QuickRow::Scale,
                 QuickRow::Stretch,
@@ -222,18 +309,19 @@ fn palette_steps_the_palette_and_asks_the_core() {
 }
 
 #[test]
-fn the_in_game_screen_page_ends_with_brightness_blue_light_saturation_and_contrast() {
+fn the_in_game_screen_page_ends_with_panel_controls_and_developer() {
     let (d, mut a) = playing();
     let (power, backlight) = common::panel(d.path(), std::time::Duration::from_secs(300));
     a.set_power(power);
     let shown = QuickRow::PlayBrightness.shown(&a.in_game_hidden());
     assert_eq!(
-        shown[shown.len() - 4..],
+        shown[shown.len() - 5..],
         [
             QuickRow::PlayBrightness,
             QuickRow::PlayBlueLight,
             QuickRow::PlaySaturation,
-            QuickRow::PlayContrast
+            QuickRow::PlayContrast,
+            QuickRow::PlayDeveloper
         ]
     );
     let before = a.brightness();

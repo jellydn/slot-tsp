@@ -198,6 +198,66 @@ fn no_trace_file_is_written_unless_one_was_asked_for() {
 }
 
 #[test]
+fn input_screen_observes_unmapped_raw_events_only_while_open_with_bounded_memory() {
+    use slot_input::InputSource;
+    use std::io::Write;
+    use std::os::unix::ffi::OsStrExt;
+    use std::time::{Duration, Instant};
+    let d = input_tree();
+    let node = d.path().join("dev/input/event1");
+    // A disposable FIFO exercises the real reader, never /dev/input or an injected kernel event.
+    fs::remove_file(&node).unwrap();
+    let name = std::ffi::CString::new(node.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let card = tempfile::tempdir().unwrap();
+    let mut input = slot::input::DeviceInput::open_in(
+        &d.path().join("dev/input"),
+        &d.path().join("sys/class/input"),
+        card.path(),
+        false,
+    );
+    input.set_monitoring(true);
+    let mut writer = fs::OpenOptions::new().write(true).open(&node).unwrap();
+    let mut bytes = Vec::new();
+    for value in 0..100 {
+        bytes.extend(packet(0x03, 0x02, value));
+    }
+    bytes.extend(packet(EV_KEY, 0x2ff, 1)); // Unknown code must remain visible.
+    bytes.extend(packet(EV_KEY, CODE_R1, 1));
+    writer.write_all(&bytes).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if input.poll(0).contains(&RawEvent::Down(Btn::R1)) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "authored reader did not reach its final event"
+        );
+        std::thread::yield_now();
+    }
+    let raw = input.take_physical_events();
+    assert_eq!(raw.len(), 64);
+    assert_eq!((raw[0].kind, raw[0].code, raw[0].value), (0x03, 0x02, 38));
+    assert_eq!(
+        (raw[62].kind, raw[62].code, raw[62].value),
+        (EV_KEY, 0x2ff, 1)
+    );
+    assert!(raw.iter().all(|e| e.node == "event1"));
+    input.set_monitoring(false);
+    writer.write_all(&packet(EV_KEY, CODE_R1, 0)).unwrap();
+    loop {
+        if input.poll(1).contains(&RawEvent::Up(Btn::R1)) {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(input.take_physical_events().is_empty());
+    assert!(!card.path().join("Logs/input-trace.log").exists());
+}
+
+#[test]
 fn the_pad_poll_rate_follows_the_platform_policy() {
     let d = input_tree();
     let sys = d.path().join("sys/class/input");
@@ -423,6 +483,51 @@ fn abs(code: u16, value: i32) -> slot::input::evdev::Ev {
 }
 
 #[test]
+fn tsp_analog_keeps_both_sticks_separate_from_triggers_and_hat() {
+    let mut pad = slot::input::evdev::TspAnalog::default();
+    for (code, value) in [(0, -32767), (1, 12345), (3, 6789), (4, -23456)] {
+        assert_eq!(pad.feed(abs(code, value)), None);
+    }
+    assert_eq!(pad.sticks(), [[-32767, 12345], [6789, -23456]]);
+    assert_eq!(pad.feed(abs(2, 255)), Some(RawEvent::Down(Btn::L2)));
+    assert_eq!(pad.feed(abs(5, 255)), Some(RawEvent::Down(Btn::R2)));
+    assert_eq!(pad.feed(abs(2, 255)), None, "duplicate trigger press");
+    assert_eq!(pad.feed(abs(2, 0)), Some(RawEvent::Up(Btn::L2)));
+    assert_eq!(pad.feed(abs(5, 0)), Some(RawEvent::Up(Btn::R2)));
+    assert_eq!(pad.feed(abs(16, -1)), None);
+    assert_eq!(pad.feed(abs(17, 1)), None);
+    assert_eq!(pad.sticks(), [[-32767, 12345], [6789, -23456]]);
+    for code in [0, 1, 3, 4] {
+        pad.feed(abs(code, 0));
+    }
+    assert_eq!(pad.sticks(), [[0; 2]; 2]);
+}
+
+#[test]
+fn tsp_analog_uses_declared_ranges_and_neutral_deadzone_not_captured_extrema() {
+    let mut pad = slot::input::evdev::TspAnalog::default();
+    pad.feed(abs(0, -50000));
+    pad.feed(abs(1, 50000));
+    pad.feed(abs(3, -2048));
+    pad.feed(abs(4, 2048));
+    assert_eq!(pad.sticks(), [[-32767, 32767], [0, 0]]);
+    pad.feed(abs(3, -2049));
+    pad.feed(abs(4, 2049));
+    assert_eq!(pad.sticks(), [[-32767, 32767], [-2049, 2049]]);
+    assert_eq!(
+        pad.feed(slot::input::evdev::Ev {
+            kind: EV_KEY,
+            code: 2,
+            value: 255
+        }),
+        None
+    );
+    assert_eq!(pad.feed(abs(2, 127)), None);
+    assert_eq!(pad.feed(abs(2, 128)), Some(RawEvent::Down(Btn::L2)));
+    assert_eq!(pad.feed(abs(2, 127)), Some(RawEvent::Up(Btn::L2)));
+}
+
+#[test]
 fn the_left_stick_presses_the_d_pad_past_half_tilt() {
     let mut hat = slot::input::evdev::Hat::default();
     hat.steer_with_stick(true);
@@ -445,12 +550,25 @@ fn with_the_stick_off_it_presses_nothing() {
 }
 
 #[test]
-fn turning_the_stick_off_mid_tilt_lets_go_on_its_next_move() {
+fn changing_stick_steering_reconciles_a_held_direction_without_another_move() {
     let mut hat = slot::input::evdev::Hat::default();
     hat.steer_with_stick(true);
     assert_eq!(hat.feed(abs(0x02, 4096)), vec![RawEvent::Down(Btn::Right)]);
-    hat.steer_with_stick(false);
-    assert_eq!(hat.feed(abs(0x02, 4000)), vec![RawEvent::Up(Btn::Right)]);
+    assert_eq!(hat.steer_with_stick(false), vec![RawEvent::Up(Btn::Right)]);
+    assert!(hat.feed(abs(0x02, -4000)).is_empty());
+    assert_eq!(hat.steer_with_stick(true), vec![RawEvent::Down(Btn::Left)]);
+    assert!(hat.steer_with_stick(true).is_empty());
+    assert_eq!(
+        hat.feed(abs(0x10, 1)),
+        vec![RawEvent::Up(Btn::Left), RawEvent::Down(Btn::Right)]
+    );
+    assert!(hat.steer_with_stick(false).is_empty());
+    assert!(hat.steer_with_stick(true).is_empty());
+    assert_eq!(
+        hat.feed(abs(0x10, 0)),
+        vec![RawEvent::Up(Btn::Right), RawEvent::Down(Btn::Left)]
+    );
+    assert_eq!(hat.feed(abs(0x02, 0)), vec![RawEvent::Up(Btn::Left)]);
 }
 
 #[test]

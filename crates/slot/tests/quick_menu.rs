@@ -349,6 +349,45 @@ fn each_systems_colour_correction_flips_on_either_arrow_and_saves_alone() {
 }
 
 #[test]
+fn ps1_rewind_is_separate_persistent_and_shared_by_both_ps1_core_choices() {
+    let (d, mut a, _) = on_carousel();
+    a.set_platform(Platform::Ps);
+    for core in [slot_store::Core::PcsxRearmed, slot_store::Core::SwanStation] {
+        a.set_core(core);
+        assert!(!a.records_rewind());
+        assert_eq!(a.quick_value(QuickRow::Rewind), Some(QuickValue::Off));
+    }
+    a.set_core(slot_store::Core::PcsxRearmed);
+    open_at(&mut a, QuickRow::Rewind);
+    press(&mut a, Btn::Right);
+    assert!(a.records_rewind());
+    assert_eq!(a.quick_value(QuickRow::Rewind), Some(QuickValue::On));
+    let saved = read_slot_state(d.path());
+    assert!(saved.rewind_ps);
+    assert!(saved.rewind);
+    let (mut reopened, _) = app_booting_at(d.path(), CLOCK_IS_SET);
+    reopened.set_platform(Platform::Ps);
+    reopened.set_core(slot_store::Core::SwanStation);
+    assert!(
+        reopened.records_rewind(),
+        "selection must not reset the preference"
+    );
+    press(&mut a, Btn::Left);
+    assert!(!read_slot_state(d.path()).rewind_ps);
+    for platform in [Platform::Gb, Platform::Gbc, Platform::Gba] {
+        a.set_platform(platform);
+        assert!(a.records_rewind());
+        assert_eq!(a.quick_value(QuickRow::Rewind), Some(QuickValue::On));
+    }
+    a.set_platform(Platform::Pico8);
+    assert!(!a.records_rewind());
+    assert_eq!(
+        a.quick_value(QuickRow::Rewind),
+        Some(QuickValue::Unavailable)
+    );
+}
+
+#[test]
 fn the_game_page_flips_auto_load_eject_save_turbo_and_rewind_and_saves_each() {
     let (d, mut a, _) = on_carousel();
     open_at(&mut a, QuickRow::Rewind);
@@ -382,15 +421,19 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     open_at(&mut a, QuickRow::Screen);
     press(&mut a, Btn::A);
     assert_eq!(a.quick_menu(), Some(QuickRow::ScreenGeneral));
-    for want in [
-        QuickRow::ScreenGba,
-        QuickRow::ScreenGbc,
-        QuickRow::ScreenGb,
-        QuickRow::ScreenGeneral,
-        QuickRow::ScreenGba,
-        QuickRow::ScreenGbc,
-        QuickRow::ScreenGb,
-    ] {
+    assert_eq!(
+        QuickRow::SCREEN.map(|row| row.label()).as_slice(),
+        [
+            "General",
+            "Game Boy Advance",
+            "Game Boy Color",
+            "Game Boy",
+            "PlayStation",
+            "PICO-8",
+            "Developer"
+        ]
+    );
+    for want in QuickRow::SCREEN.into_iter().cycle().skip(1).take(10) {
         press(&mut a, Btn::Down);
         assert_eq!(
             a.quick_menu(),
@@ -422,6 +465,48 @@ fn screen_opens_a_page_of_its_own_and_b_comes_back_to_it() {
     assert_eq!(a.quick_menu(), Some(QuickRow::Screen));
     press(&mut a, Btn::B);
     assert_eq!(a.quick_menu(), None);
+}
+
+#[test]
+fn native_screen_pages_edit_only_their_own_bezel_and_developer_is_session_only() {
+    for (platform, row) in [
+        (Platform::Ps, QuickRow::PsBezel),
+        (Platform::Pico8, QuickRow::Pico8Bezel),
+    ] {
+        let (d, mut a, _) = on_carousel();
+        std::fs::create_dir_all(d.path().join("Bezels").join(platform.dir_name())).unwrap();
+        std::fs::write(
+            d.path()
+                .join("Bezels")
+                .join(platform.dir_name())
+                .join("Custom.png"),
+            b"listed fixture",
+        )
+        .unwrap();
+        let mut expected = read_slot_state(d.path());
+        open_at(&mut a, row);
+        press(&mut a, Btn::Right);
+        let pick = BezelPick::File("Custom.png".into());
+        assert_eq!(a.resolved_bezel(platform), pick);
+        match platform {
+            Platform::Ps => expected.bezel_ps = pick,
+            _ => expected.bezel_pico8 = pick,
+        }
+        assert_eq!(read_slot_state(d.path()), expected);
+        while a.quick_menu().is_some() {
+            press(&mut a, Btn::B);
+        }
+        open_at(&mut a, QuickRow::Performance);
+        assert_eq!(QuickRow::Performance.parent(), Some(QuickRow::Developer));
+        press(&mut a, Btn::Right);
+        assert!(a.performance());
+        press(&mut a, Btn::B);
+        assert_eq!(a.quick_menu(), Some(QuickRow::Developer));
+        press(&mut a, Btn::B);
+        assert_eq!(a.quick_menu(), Some(QuickRow::Screen));
+        assert_eq!(read_slot_state(d.path()), expected);
+        assert!(!App::boot(d.path()).performance());
+    }
 }
 
 #[test]
@@ -1268,6 +1353,105 @@ fn the_clock_offers_b_back_and_never_a_set() {
         let out = frame(app);
         assert!(drawn(&out, 401), "{way}: the 12/24 row lost CHANGE");
     }
+}
+
+#[test]
+fn stock_brightness_is_unavailable_and_preserves_saved_hardware_and_dim_levels() {
+    let (d, mut a, _) = on_carousel_with(SlotState {
+        brightness: 3,
+        dim: 2,
+        ..SlotState::default()
+    });
+    a.set_stock_controls_owned();
+    a.set_power(slot_power::Power::new(
+        Box::new(slot_power::SimPlatform::at(d.path().to_path_buf())),
+        std::time::Duration::from_secs(60),
+    ));
+    open_at(&mut a, QuickRow::Brightness);
+    assert_eq!(
+        a.quick_value(QuickRow::Brightness),
+        Some(QuickValue::Unavailable)
+    );
+    assert_eq!(
+        a.quick_value(QuickRow::PlayBrightness),
+        Some(QuickValue::Unavailable)
+    );
+    assert_eq!(
+        a.dim(),
+        0,
+        "legacy Slot dim must not attenuate stock brightness"
+    );
+    for btn in [Btn::Left, Btn::Right, Btn::A] {
+        press(&mut a, btn);
+    }
+    for action in [Action::BrightnessUp, Action::BrightnessDown] {
+        a.apply(action);
+    }
+    a.flush_state();
+    let saved = read_slot_state(d.path());
+    assert_eq!((saved.brightness, saved.dim), (3, 2));
+    assert_eq!(a.quick_menu(), Some(QuickRow::Brightness));
+    press(&mut a, Btn::B);
+    assert_eq!(a.quick_menu(), Some(QuickRow::ScreenGeneral));
+}
+
+#[test]
+fn stock_brightness_uses_live_readback_without_replaying_or_saving_slot_levels() {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let (d, mut a, _) = on_carousel_with(SlotState {
+        brightness: 3,
+        dim: 2,
+        ..SlotState::default()
+    });
+    a.set_stock_controls_owned();
+    let (power, panel) = common::panel(d.path(), Duration::from_secs(60));
+    panel.store(7, Ordering::Relaxed);
+    a.set_power(power);
+    assert_eq!(
+        panel.load(Ordering::Relaxed),
+        7,
+        "startup changed the panel"
+    );
+    open_at(&mut a, QuickRow::Brightness);
+    assert_eq!(
+        a.quick_value(QuickRow::Brightness),
+        Some(QuickValue::Level6)
+    );
+    press(&mut a, Btn::Right);
+    assert_eq!(panel.load(Ordering::Relaxed), 8);
+    assert_eq!(
+        a.quick_value(QuickRow::PlayBrightness),
+        Some(QuickValue::Level7)
+    );
+    panel.store(3, Ordering::Relaxed); // A stock control changed it outside Slot.
+    a.apply(Action::BrightnessDown);
+    assert_eq!(panel.load(Ordering::Relaxed), 2);
+    for _ in 0..20 {
+        press(&mut a, Btn::Left);
+    }
+    assert_eq!(
+        panel.load(Ordering::Relaxed),
+        1,
+        "must not black out the panel"
+    );
+    for _ in 0..20 {
+        a.apply(Action::BrightnessUp);
+    }
+    assert_eq!(panel.load(Ordering::Relaxed), 10);
+    assert_eq!(a.dim(), 0);
+    panel.store(u8::MAX, Ordering::Relaxed); // Readback became unavailable.
+    press(&mut a, Btn::Left);
+    a.apply(Action::BrightnessUp);
+    assert_eq!(panel.load(Ordering::Relaxed), u8::MAX);
+    assert_eq!(
+        a.quick_value(QuickRow::Brightness),
+        Some(QuickValue::Unavailable)
+    );
+    a.flush_state();
+    let saved = read_slot_state(d.path());
+    assert_eq!((saved.brightness, saved.dim), (3, 2));
 }
 
 #[test]
