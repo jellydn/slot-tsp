@@ -1,10 +1,20 @@
-# Combined handheld test — stock-tsp-0.3.0-test.13
+# Combined handheld test — stock-tsp-0.3.0-test.14
 
 **Not hardware accepted. Do not overwrite an unknown card baseline.** This
 document is a test plan, not permission for an agent to install or operate the
 device. No SD writes were required to build this candidate. Stable 0.2.0 stays
 unchanged. Record the candidate ZIP and executable SHA256 from `BUILD-INFO.json`
 and `SHA256SUMS`, firmware, game format/region/BIOS and result for every test.
+
+**TSP DualShock all-button loss remains unreproduced and unfixed.** Host
+0x73/four-axis checks do not establish device acceptance. Start with the
+test.14 owner checklist in `RELEASE-NOTES.md`: Digital stick steering requires
+the existing saved setting; original Road Rash USA is digital-only, not a
+native analog acceptance title. Check both cores, cold start/resume and saved
+L2/R2 bindings separately. Do not erase settings or move cards between cores.
+RomM accepts only bounded flat raw BIN/BINARY-CUE/M3U bundles. Abrupt loss can
+leave hidden payloads blocking retry; no automatic recovery is supplied.
+Logo/recovery, transfer keep-awake, stock suspend and PS1 autoart remain open.
 
 The owner reports PICO-8 and brightness good on test.4. The cases below remain
 separate checks, not implied passes. Test.7 retains test.6 and adds the empty
@@ -27,7 +37,7 @@ separate from device operation; a mounted card alone is not approval.
   BIOS, saves, states, settings, pairing data and splash overrides. The ZIP
   contains no user content. Never hot-replace the running executable.
 - [ ] After a separately approved copy and safe eject, check the displayed build
-  label is `stock-tsp-0.3.0-test.13`. Keep the previous payload for rollback.
+  label is `stock-tsp-0.3.0-test.14`. Keep the previous payload for rollback.
 
 ## Input Test — owner-controlled diagnostic, not a binding fix
 
@@ -39,7 +49,8 @@ separate from device operation; a mounted card alone is not approval.
   HELD is current; seen is history. L2/R2 are ABS axes, not digital KEY events.
 - [ ] Move each stick separately, then together, and release to center. Signed
   values are after the existing deadzone, not calibration. Digital mode ignores
-  gameplay axes. TSP has no physical L3/R3 and no substitute binding is added.
+  native gameplay axes; the saved stick-as-D-pad setting can synthesize digital
+  directions. TSP has no physical L3/R3 and no substitute binding is added.
 - [ ] Test.13: B release and short Menu taps do not exit.
   Hold Menu for one second to return, even with another button held. Check
   Menu-plus-button bindings before the threshold. Reopen to clear history;

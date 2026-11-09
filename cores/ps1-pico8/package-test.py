@@ -12,7 +12,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-VERSION = "stock-tsp-0.3.0-test.13"
+VERSION = "stock-tsp-0.3.0-test.14"
 BASE = "7d14cc6c9b4017a5dc2739c5ea54279a70f7a14b"
 IMAGE = "rust@sha256:4730e387a220a08a365c77da3096544dde214f9d796c16284d4be45438cad4a9"
 SWAN_COMMIT = "631f0fb31b809e0f889d7c551fe695788e39c1d3"
@@ -258,7 +258,9 @@ def main():
         "Legacy/cross-build states and unsupported Lua persistence are not supported.\n"
         "Stock owns volume; Slot brightness uses live LCD readback without startup replay.\n"
         "PICO-8 test.3 states are incompatible; preserve refused snapshots and cartdata.\n"
-        "PS1: Digital/DualShock and both sticks; no physical L3/R3 or rumble claim.\n"
+        "PS1: TSP DualShock all-button loss remains unreproduced/unfixed.\n"
+        "Digital stick-to-D-pad uses the existing setting; host analog success is not device acceptance.\n"
+        "Original Road Rash USA is digital-only; no native analog support claim. No physical L3/R3 or rumble.\n"
         "Wi-Fi correction is included, but physical Power-button acceptance is still pending.\n"
         "See BUILD-INFO.json for hashes and source identity; Sources/ contains build materials.\n"
     )
@@ -367,6 +369,12 @@ def main():
         },
         "limits": [
             "Hardware and sustained speed unverified",
+            "TSP DualShock all-button loss remains unreproduced/unfixed",
+            "Host 0x73/four-axis acceptance is not device or Road Rash analog acceptance",
+            "Digital stick-to-D-pad requires the existing saved setting; defaults unchanged",
+            "Unbound/remapped L2/R2 can expose saved FF/rewind shortcuts",
+            "RomM flat raw BIN/CUE/M3U only; abrupt interruption can leave hidden payloads blocking retry",
+            "No automatic RomM orphan cleanup/recovery; preserve retained user content",
             "No physical L3/R3 or rumble",
             "fake-08 states require this exact patched build; rewind disabled",
             "Unsupported/oversized Lua states fail explicitly; arbitrary carts unverified",

@@ -126,9 +126,9 @@ an app in `Apps/`. Existing release ZIPs do not gain this feature.
    when you leave the library. Downloads use `Games/GB`, `Games/GBC` or
    `Games/GBA` below the same Slot root on either OS.
 
-Only individual ROMs and ZIPs with exactly one playable ROM are supported.
+Individual ROMs and ZIPs with exactly one playable ROM are supported.
 ZIPs are unpacked before installation; neither ZIP nor 7z archives are left
-on the shelf. 7z and multi-file entries show **Unsupported**. Failed or
+on the shelf. 7z and unsupported multi-file entries show **Unsupported**. Failed or
 cancelled downloads remove temporary files; an existing game is not replaced.
 Library errors allow retry. Remote receive polling pauses while the library
 is open. Box art, save sync and collections are not part of this client.
@@ -139,8 +139,26 @@ PICO-8 downloads accept `.p8` text carts and `.p8.png` cart images into
 `Games/PICO8`. ZIPs must contain exactly one accepted game file. Downloads
 check file headers (and decode PNGs at the cart's 160×205 dimensions); this
 does not prove that a game runs. Files larger than FAT32's 4-GiB-minus-1-byte
-limit are rejected. CUE/BIN and M3U sets remain unsupported by the downloader:
-it must not install a descriptor without its tracks or discs.
+limit are rejected.
+
+Test.14 also accepts bounded PS1 BIN/CUE bundles, with one CUE or
+one M3U that orders the CUE discs. Names must be flat, unique and safe for
+FAT32. References must resolve exactly to the supplied files, without missing
+or unused members, traversal, symlinks or case-colliding names. This first
+implementation supports raw 2352-byte data-image BIN files and BINARY CUE
+descriptors; cooked 2048-byte images, separate audio-only BINs, WAV files,
+nested paths and bundled ZIPs are not supported.
+
+Each member is downloaded by its own file ID into a private staging directory.
+After validation, payloads move into `Games/PS/.romm-<ROM ID>`. One top-level
+M3U becomes the library-visible commit point; it is published last using a
+no-replace rename. Existing entries and payload folders are never overwritten.
+Cancellation and handled failures remove this transaction's temporary payloads.
+A process/power interruption can leave an invisible payload folder; it is not
+automatically deleted or reused. Filesystem support for no-replace rename and
+directory sync is required; unsupported filesystems fail without publishing.
+Deleting the top-level M3U keeps payloads, saves, cards, states and art.
+This is offline/authored-test coverage, not live RomM or device acceptance.
 
 RomM's `psx`/`ps` platform names map to PS1, and `pico`/`pico8`/`pico-8` map
 to PICO-8. `sega-pico` is a different system and is not mapped. In the development
@@ -235,6 +253,32 @@ test.2 ZIP. See the [repair notes](cores/ps1-pico8/README.md#pico-8-quick-state-
 for limits and real-core/Slot tests. Test.9 was installed with separate owner
 approval and verified backup/readback; this draft does not authorise another
 SD update or publish a stable package.
+
+Test.14: Menu → Screen includes PlayStation and PICO-8 pages
+for their existing bezel settings. In-game Settings → Screen → Developer
+contains the Performance HUD; the shelf also offers Screen → Developer.
+The HUD remains off at startup and is not saved.
+
+On a 16:9 TSP panel, GBA now offers None, Default and custom PNG bezels under
+Screen → Game Boy Advance → Bezel (or in-game Settings → Screen → Bezel).
+Default uses original geometric side panels behind the centred 3:2 picture;
+it does not stretch the game. Existing selections, custom files and 4:3
+AGS-102 behaviour are retained. Choose Default to enable the new border;
+this change does not change saved defaults.
+
+On the library shelf, **X** opens a game-delete confirmation. Cancel is selected
+first; Right selects Delete, A chooses, and B cancels. The prompt names the
+single file to remove. Saves, cards, states, configuration and custom art stay.
+Deleting a CUE or M3U removes only that descriptor, not its tracks or discs;
+playlist members can become visible again after refresh. Shared PS files,
+symlink selections and uncertain disc references block deletion. No folder or
+game-family cleanup is performed. X replaces the old default Remove Recent
+shortcut; that action can still be assigned another key under Controls → Shelf.
+An existing custom X action takes priority and disables this delete shortcut.
+See the [test.14 notes and checklist](knulli/RELEASE-STOCK-0.3.0-test.14.md).
+The TSP DualShock all-button loss remains unreproduced and unfixed. Digital
+stick steering uses the existing saved setting; host analog acceptance does
+not establish handheld acceptance or native analog support in Road Rash.
 
 ### Stock TSP controls
 

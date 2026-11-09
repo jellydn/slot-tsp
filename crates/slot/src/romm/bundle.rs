@@ -170,7 +170,7 @@ fn validate(stage: &Path, rom: &RomInfo, entry: usize) -> io::Result<Vec<PathBuf
                 let words: Vec<_> = line.split_whitespace().collect();
                 match words.first().map(|w| w.to_ascii_uppercase()).as_deref() {
                     Some("FILE") if !line.trim_end().to_ascii_uppercase().ends_with(" BINARY") => {
-                        return Err(io::Error::other(INVALID))
+                        return Err(io::Error::other(INVALID));
                     }
                     Some("TRACK") => {
                         if words.len() != 3
@@ -329,7 +329,9 @@ pub(super) fn install(
         .and_then(|_| std::fs::File::open(&games)?.sync_all())
         .is_err()
     {
-        return failed("PS1 bundle published; storage sync failed. Check the library before retrying");
+        return failed(
+            "PS1 bundle published; storage sync failed. Check the library before retrying",
+        );
     }
     Ok(Finished {
         outcome: Outcome::Done,

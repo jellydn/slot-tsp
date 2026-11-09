@@ -6,6 +6,60 @@ fixes convention used by [jellydn/VoiceInk](https://github.com/jellydn/VoiceInk)
 
 ## [2026-11] - Sync & Fixes
 
+### Experimental prerelease — stock-tsp-0.3.0-test.14
+
+Completed scope and device checklist: [test.14 notes](knulli/RELEASE-STOCK-0.3.0-test.14.md).
+The TSP DualShock all-button loss remains unreproduced and unfixed.
+
+#### PS1 Digital stick compatibility and host analog acceptance
+
+- Apply the existing saved Left Stick as D-Pad setting to PS1 Digital mode
+  on both core routes. Expose that setting only when Digital is selected;
+  preserve DualShock's native axes, controller options and saved defaults.
+- Reconcile held stick directions when steering changes, without waiting for
+  another input packet. Preserve physical D-pad priority and menu-consumed
+  directions instead of replaying them into gameplay after closing a menu.
+- Add red-first FIFO/frontend regressions for directions, releases, saved
+  settings and live controller switches. Separate authored real-core tests
+  verify negotiated 0x73 replies, four axes, buttons, reset and state policy
+  through the FIFO/frontend path. These do not prove owner-device acceptance
+  or native analog support in original Road Rash.
+
+#### Transactional RomM PS1 bundles
+
+- Accept flat BIN/CUE and M3U-ordered CUE bundles with unique file IDs/names,
+  bounded descriptors and complete confined reference closure. Initial scope
+  is raw 2352-byte data-image BINs and BINARY CUEs, not arbitrary disc formats.
+- Fetch members individually by ID; validate before exposing any shelf entry.
+  Publish the hidden payload directory before a single top-level M3U commit,
+  using no-replace renames and preserving existing games and user data.
+- Remove staged payloads on cancellation/handled errors. Process/power loss
+  can leave invisible payloads; do not automatically remove or overwrite them.
+- Authored offline bundle tests exercise installation, malformed references,
+  collisions and interruption. No live game download or device acceptance.
+  The global PS1 DualShock/joystick report remains unresolved.
+
+#### Screen settings, GBA bezel and safe game deletion
+
+- Move the session-only Performance HUD from Gameplay to Screen → Developer,
+  available from the shelf and in-game settings; keep startup off and unsaved.
+- Add PlayStation and PICO-8 Screen pages for existing independent bezel
+  settings, without installing cores or exposing unsupported video options.
+- Offer an original Default GBA bezel and custom PNGs on 16:9 TSP panels,
+  drawn behind the unchanged game picture. Preserve None, saved selections,
+  custom art, 4:3 AGS-102 behaviour and existing native borders.
+- Extend GB/GBC bezel edge grain across the 16:9 panel's outer columns,
+  without resizing the authored frame or game opening. Preserve None's
+  aspect padding, panel-sized custom art and existing 4:3 composition.
+- Add shelf X-delete with a named-file confirmation, Cancel selected first,
+  preserved saves/cards/states/config/art, descriptor-only CUE/M3U removal and
+  shared-disc/symlink/reference checks. Preserve custom X bindings, keep
+  Remove Recent available on another key, and refresh the shelf after success.
+- Owner reports test.13 PS1 at 50–60 fps, improved performance, good audio
+  aligned with stock and a working Input Test. These are observations of the
+  tested cases, not universal input/performance or startup-volume acceptance.
+  L2/R2, DualShock and the reported RomM case remain unresolved.
+
 ### Experimental prerelease — stock-tsp-0.3.0-test.12
 
 - Add Menu → Controls → Input Test: observed evdev identity is separate from
