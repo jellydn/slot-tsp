@@ -435,6 +435,7 @@ fn insert_stops_the_download() {
 fn library_progress_has_real_totals_installation_retry_and_stale_event_guards() {
     use slot::romm::api::{DownloadProgress, Library, LibraryRom, RomInfo};
     let (_d, mut a, script) = paired_on_the_shelf();
+    a.set_stock_power_owned();
     open_at(&mut a, QuickRow::RommLibrary);
     press(&mut a, Btn::A);
     let request = match script.asked.lock().unwrap().last().unwrap() {
@@ -473,6 +474,19 @@ fn library_progress_has_real_totals_installation_retry_and_stale_event_guards() 
     assert_eq!(screen.lines[2].label, "Downloading; B: cancel");
     assert_eq!(screen.lines[2].value.as_deref(), Some("25%"));
     assert_eq!(screen.lines[3].label, "768.0 MiB / 3072.0 MiB");
+    let asked = script.asked.lock().unwrap().len();
+    advance(&mut a, 121_000);
+    assert!(matches!(a.phase(), Phase::RommLibrary { .. }));
+    assert!(a.wifi_up());
+    assert_eq!(
+        a.network_screen().unwrap().lines[2].value.as_deref(),
+        Some("25%")
+    );
+    assert_eq!(
+        script.asked.lock().unwrap().len(),
+        asked,
+        "idle cancelled the transfer"
+    );
     script.events.lock().unwrap().push(progress(12345, None));
     pump(&mut a);
     let screen = a.network_screen().unwrap();

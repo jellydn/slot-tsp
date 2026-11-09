@@ -66,6 +66,9 @@ impl LibraryRom {
         let Some(platform) = super::install::target_dir(&self.info.platform_slug) else {
             return false;
         };
+        if super::bundle::entry(&self.info).is_some() {
+            return true;
+        }
         if self.info.files.len() > 1 {
             return false;
         }
@@ -84,12 +87,15 @@ impl LibraryRom {
         Install {
             id: format!("library-{}", self.id),
             rom_id: self.id,
-            file_ids: self
-                .info
-                .files
-                .first()
-                .map(|f| vec![f.id])
-                .unwrap_or_default(),
+            file_ids: if super::bundle::entry(&self.info).is_some() {
+                self.info.files.iter().map(|f| f.id).collect()
+            } else {
+                self.info
+                    .files
+                    .first()
+                    .map(|f| vec![f.id])
+                    .unwrap_or_default()
+            },
         }
     }
 }

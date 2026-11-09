@@ -133,7 +133,7 @@ pub fn sweep(root: &Path) {
     }
 }
 
-fn failed(reason: &str) -> Result<Finished, Stopped> {
+pub(super) fn failed(reason: &str) -> Result<Finished, Stopped> {
     Ok(Finished {
         outcome: Outcome::Failed(reason.to_string()),
         stem: None,
@@ -141,7 +141,7 @@ fn failed(reason: &str) -> Result<Finished, Stopped> {
     })
 }
 
-fn stopped(error: ApiError) -> Result<Finished, Stopped> {
+pub(super) fn stopped(error: ApiError) -> Result<Finished, Stopped> {
     match error {
         ApiError::Offline => Err(Stopped::Offline),
         ApiError::Server(_) | ApiError::Truncated => Err(Stopped::Transient),
@@ -204,6 +204,9 @@ pub fn install(
     let Some(platform) = target_dir(&rom.platform_slug) else {
         return failed("Unsupported RomM platform");
     };
+    if let Some(entry) = super::bundle::entry(&rom) {
+        return super::bundle::install(root, api, req, cancel, &rom, entry);
+    }
     if req.file_ids.len() > 1 {
         return failed("Multi-file ROMs are not supported");
     }
