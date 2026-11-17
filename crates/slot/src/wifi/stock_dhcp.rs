@@ -192,7 +192,7 @@ mod linux {
     use std::io::{Read, Write};
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
     use std::os::unix::process::CommandExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::process::{Child, Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -374,7 +374,7 @@ mod linux {
                     // The verified factory symlink may dangle before the first
                     // lease. Create only that exact tmpfs target, never /etc.
                     let path = fs::read_link("/etc/resolv.conf").map_err(|_| Failure::NoIp)?;
-                    if path != PathBuf::from("/tmp/resolv.conf") {
+                    if path != Path::new("/tmp/resolv.conf") {
                         return Err(Failure::DhcpBusy);
                     }
                     OpenOptions::new()

@@ -115,7 +115,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::CONTROL_PAGES.map(QuickRow::label),
-        ["Shelf", "Collections", "Shortcuts", "In-Game"]
+        ["Shelf", "Collections", "Shortcuts", "In-Game", "Input Test"]
     );
     assert_eq!(
         QuickRow::SHELF_KEYS.map(QuickRow::label),
@@ -123,7 +123,15 @@ fn the_rows_run_in_the_order_the_user_chose() {
     );
     assert_eq!(
         QuickRow::SCREEN.map(QuickRow::label),
-        ["General", "Game Boy Advance", "Game Boy Color", "Game Boy"]
+        [
+            "General",
+            "Game Boy Advance",
+            "Game Boy Color",
+            "Game Boy",
+            "PlayStation",
+            "PICO-8",
+            "Developer"
+        ]
     );
     assert_eq!(
         QuickRow::SCREEN_GENERAL.map(QuickRow::label),
@@ -173,6 +181,8 @@ fn the_rows_run_in_the_order_the_user_chose() {
             "Rewind",
             "Rumble",
             "Left Stick as D-Pad",
+            "PS1 Controller",
+            "Disc",
             "Resume on Insert",
             "Resume on Power On"
         ]
@@ -206,6 +216,7 @@ fn the_rows_run_in_the_order_the_user_chose() {
             QuickRow::ControlsShelf,
             QuickRow::ControlsCollections,
             QuickRow::ControlsInGame,
+            QuickRow::InputTest,
             QuickRow::ScreenGeneral,
             QuickRow::UndoSave,
             QuickRow::UndoLoad,
@@ -223,6 +234,10 @@ fn the_rows_run_in_the_order_the_user_chose() {
             QuickRow::RommDisconnect,
             QuickRow::DeviceSettings,
             QuickRow::RommLibrary,
+            QuickRow::Developer,
+            QuickRow::PlayDeveloper,
+            QuickRow::ScreenPs,
+            QuickRow::ScreenPico8,
             QuickRow::System
         ]
     );
@@ -241,6 +256,9 @@ fn the_rows_run_in_the_order_the_user_chose() {
         &QuickRow::SCREEN_GBA[..],
         &QuickRow::SCREEN_GBC[..],
         &QuickRow::SCREEN_GB[..],
+        &QuickRow::SCREEN_PS[..],
+        &QuickRow::SCREEN_PICO8[..],
+        &QuickRow::DEVELOPER[..],
     ] {
         for &row in page {
             assert_eq!(row.page(), page, "{row:?}");
@@ -320,6 +338,8 @@ fn the_values_read_as_the_menu_prints_them() {
             "HTTPS",
             "HTTP",
             "Unavailable",
+            "Digital",
+            "DualShock",
             "All",
             "Collections",
             "One Shelf",
@@ -423,8 +443,22 @@ fn the_in_game_pages_hold_their_rows_in_order() {
     assert_eq!(
         QuickRow::CONTROLS.map(QuickRow::label),
         [
-            "Up", "Down", "Left", "Right", "A Button", "B Button", "Select", "Start", "L Button",
-            "R Button", "Turbo A", "Turbo B"
+            "Up",
+            "Down",
+            "Left",
+            "Right",
+            "A Button",
+            "B Button",
+            "Select",
+            "Start",
+            "L Button",
+            "R Button",
+            "Turbo A",
+            "Turbo B",
+            "X Button",
+            "Y Button",
+            "L2 Button",
+            "R2 Button"
         ]
     );
     assert_eq!(
@@ -441,7 +475,8 @@ fn the_in_game_pages_hold_their_rows_in_order() {
             QuickRow::PlayBrightness,
             QuickRow::PlayBlueLight,
             QuickRow::PlaySaturation,
-            QuickRow::PlayContrast
+            QuickRow::PlayContrast,
+            QuickRow::PlayDeveloper
         ]
     );
     for row in QuickRow::PLAY {
@@ -495,7 +530,7 @@ fn in_game_rows_read_as_the_menu_shows_them() {
         assert!(row.centred(), "{row:?}");
     }
     for row in QuickRow::PLAY_SCREEN {
-        assert!(!row.opens(), "{row:?}");
+        assert_eq!(row.opens(), row == QuickRow::PlayDeveloper, "{row:?}");
         assert!(!row.centred(), "{row:?}");
     }
     assert!(QuickRow::General.centred());
@@ -504,7 +539,7 @@ fn in_game_rows_read_as_the_menu_shows_them() {
 }
 
 #[test]
-fn a_hidden_palette_and_bezel_leave_nine_screen_rows() {
+fn a_hidden_palette_and_bezel_leave_ten_screen_rows() {
     let hidden = [QuickRow::Palette, QuickRow::Bezel, QuickRow::Overlay];
     assert_eq!(
         QuickRow::Shader.shown(&hidden),
@@ -517,10 +552,11 @@ fn a_hidden_palette_and_bezel_leave_nine_screen_rows() {
             QuickRow::PlayBrightness,
             QuickRow::PlayBlueLight,
             QuickRow::PlaySaturation,
-            QuickRow::PlayContrast
+            QuickRow::PlayContrast,
+            QuickRow::PlayDeveloper
         ]
     );
-    assert_eq!(QuickRow::PlayContrast.down(&hidden), QuickRow::Shader);
+    assert_eq!(QuickRow::PlayDeveloper.down(&hidden), QuickRow::Shader);
 }
 
 #[test]
@@ -563,12 +599,12 @@ fn the_in_game_screen_panel_shows_three_rows_and_scrolls_the_rest() {
             QuickRow::PlayContrast,
             &[QuickRow::Overlay]
         ),
-        (8, 3)
+        (9, 3)
     );
     let hidden = [QuickRow::Palette, QuickRow::Bezel, QuickRow::Overlay];
     assert_eq!(
         slot_ui::quick_window(slot_ui::Canvas::FRAMED, QuickRow::PlayContrast, &hidden),
-        (6, 3)
+        (7, 3)
     );
 }
 
@@ -579,21 +615,21 @@ fn a_scroll_bar_shows_only_on_a_page_with_rows_out_of_sight() {
         QuickRow::Shader,
         &[QuickRow::Overlay],
     )
-    .expect("eleven rows in three");
+    .expect("twelve rows in three");
     assert!(
         (top.thumb_y - top.y).abs() < 0.5,
         "the thumb is not at the top"
     );
     assert!(
-        (top.thumb_h - top.h / 11.0).abs() < 0.5,
-        "the thumb is not one row of eleven"
+        (top.thumb_h - top.h / 12.0).abs() < 0.5,
+        "the thumb is not one row of twelve"
     );
     let end = slot_ui::quick_scroll(
         slot_ui::Canvas::FRAMED,
-        QuickRow::PlayContrast,
+        QuickRow::PlayDeveloper,
         &[QuickRow::Overlay],
     )
-    .expect("eleven rows in three");
+    .expect("twelve rows in three");
     assert!(
         (end.thumb_y + end.thumb_h - (end.y + end.h)).abs() < 0.5,
         "the thumb is not at the bottom"
@@ -605,7 +641,7 @@ fn a_scroll_bar_shows_only_on_a_page_with_rows_out_of_sight() {
             &[QuickRow::Palette, QuickRow::Bezel, QuickRow::Overlay]
         )
         .is_some(),
-        "nine rows in three still scroll"
+        "ten rows in three still scroll"
     );
     assert_eq!(
         slot_ui::quick_scroll(slot_ui::Canvas::FRAMED, QuickRow::Rumble, &[]),
@@ -814,6 +850,7 @@ fn collections_sits_after_shelf_in_controls() {
             QuickRow::ControlsCollections,
             QuickRow::Shortcuts,
             QuickRow::ControlsInGame,
+            QuickRow::InputTest,
         ]
     );
     assert_eq!(QuickRow::ControlsCollections.label(), "Collections");

@@ -93,6 +93,13 @@ fn own_canvas(canvas: crate::layout::Canvas, picture: (u32, u32), sizing: Sizing
 }
 
 pub fn game_layout(window: (u32, u32), picture: (u32, u32), sizing: Sizing) -> GameLayout {
+    // The TSP's wide panel scales the existing 3:2 game canvas; its side art
+    // does not change integer sizing or crop the Nintendo picture.
+    let window = if crate::bezel::wide(window) {
+        (OUT_W, OUT_H)
+    } else {
+        window
+    };
     let size = match crate::layout::fills(window) {
         true => crate::layout::panel_pixels(window),
         false => (OUT_W, OUT_H),

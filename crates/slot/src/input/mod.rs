@@ -9,6 +9,7 @@ mod mask;
 #[cfg(feature = "host")]
 mod pad;
 mod table;
+pub mod test_screen;
 pub mod touch;
 pub mod trace;
 

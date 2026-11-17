@@ -7,4 +7,4 @@ pub use gesture::{
     POWER_HOLD_MS, SELECT_CHORD_MS, SELECT_HOLD_MS, SELECT_TAP_MS, VOLUME_REPEAT_DELAY_MS,
     VOLUME_REPEAT_MS,
 };
-pub use raw::{Btn, InputSource, Millis, RawEvent};
+pub use raw::{Btn, InputSource, Millis, PhysicalEvent, RawEvent};

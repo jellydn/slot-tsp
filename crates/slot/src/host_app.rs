@@ -112,6 +112,7 @@ impl ApplicationHandler for Slot {
                     events.exit();
                     return;
                 }
+                self.frontend.presented(swap - began, swap.elapsed(), None);
                 surface.request_redraw();
                 self.frontend.advance(&mut self.input);
                 if self.frontend.restarting() {

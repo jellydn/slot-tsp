@@ -9,7 +9,9 @@ use slot::networks::{
 };
 use slot::wifi::{Backend, Cmd, Fake, Wifi};
 use slot_input::{Action, Btn};
-use slot_store::{read_slot_state, write_slot_state, SlotState};
+#[cfg(not(feature = "nds"))]
+use slot_store::read_slot_state;
+use slot_store::{write_slot_state, SlotState};
 use slot_ui::{QuickRow, Toast};
 use tempfile::TempDir;
 
@@ -1067,6 +1069,7 @@ fn b_held_to_close_the_help_does_not_delete() {
     assert_eq!(a.keyboard().unwrap().text(), "secret99");
 }
 
+#[cfg(not(feature = "nds"))]
 fn open_nickname(a: &mut App) {
     a.apply(Action::QuickMenu);
     for row in [QuickRow::System, QuickRow::Nickname] {
@@ -1086,6 +1089,7 @@ fn open_nickname(a: &mut App) {
 }
 
 #[test]
+#[cfg(not(feature = "nds"))]
 fn the_nickname_row_opens_the_keyboard_and_saves() {
     let _g = serial();
     let (d, mut a, _log) = booted(Fake::demo());
@@ -1098,6 +1102,7 @@ fn the_nickname_row_opens_the_keyboard_and_saves() {
 }
 
 #[test]
+#[cfg(not(feature = "nds"))]
 fn a_long_nickname_is_cut_to_29_bytes() {
     let _g = serial();
     let (d, mut a, _log) = booted(Fake::demo());
@@ -1109,6 +1114,7 @@ fn a_long_nickname_is_cut_to_29_bytes() {
 }
 
 #[test]
+#[cfg(not(feature = "nds"))]
 fn an_empty_nickname_falls_back_to_the_device_name() {
     let _g = serial();
     let (d, mut a, _log) = booted(Fake::demo());

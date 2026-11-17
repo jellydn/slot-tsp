@@ -11,21 +11,33 @@ pub enum Core {
     Mgba,
     Gpsp,
     Gambatte,
+    PcsxRearmed,
+    Fake08,
+    SwanStation,
     #[cfg(feature = "nds")]
     Dsperate,
 }
 
 impl Core {
-    #[cfg(not(feature = "nds"))]
-    pub const ALL: [Core; 3] = [Core::Mgba, Core::Gpsp, Core::Gambatte];
-    #[cfg(feature = "nds")]
-    pub const ALL: [Core; 4] = [Core::Mgba, Core::Gpsp, Core::Gambatte, Core::Dsperate];
+    pub const ALL: [Core; 6 + cfg!(feature = "nds") as usize] = [
+        Core::Mgba,
+        Core::Gpsp,
+        Core::Gambatte,
+        Core::PcsxRearmed,
+        Core::Fake08,
+        Core::SwanStation,
+        #[cfg(feature = "nds")]
+        Core::Dsperate,
+    ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             Core::Mgba => "mgba",
             Core::Gpsp => "gpsp",
             Core::Gambatte => "gambatte",
+            Core::PcsxRearmed => "pcsx_rearmed",
+            Core::Fake08 => "fake08",
+            Core::SwanStation => "swanstation",
             #[cfg(feature = "nds")]
             Core::Dsperate => "dsperate",
         }
@@ -40,6 +52,9 @@ impl Core {
             Core::Mgba => "mGBA",
             Core::Gpsp => "gpSP",
             Core::Gambatte => "Gambatte",
+            Core::PcsxRearmed => "PCSX ReARMed",
+            Core::Fake08 => "fake-08",
+            Core::SwanStation => "SwanStation",
             #[cfg(feature = "nds")]
             Core::Dsperate => "DSperate",
         }
@@ -50,6 +65,9 @@ impl Core {
             "mgba" => Some(Core::Mgba),
             "gpsp" => Some(Core::Gpsp),
             "gambatte" => Some(Core::Gambatte),
+            "pcsx_rearmed" => Some(Core::PcsxRearmed),
+            "fake08" => Some(Core::Fake08),
+            "swanstation" => Some(Core::SwanStation),
             #[cfg(feature = "nds")]
             "dsperate" => Some(Core::Dsperate),
             _ => None,
@@ -60,20 +78,24 @@ impl Core {
         match self {
             #[cfg(feature = "nds")]
             _ if platform == Platform::Nds => self == Core::Dsperate,
-            Core::Mgba => true,
+            Core::Mgba => !platform.native(),
             Core::Gpsp => platform.hardware() == Platform::Gba,
             Core::Gambatte => matches!(platform, Platform::Gb | Platform::Gbc),
+            Core::PcsxRearmed | Core::SwanStation => platform == Platform::Ps,
+            Core::Fake08 => platform == Platform::Pico8,
             #[cfg(feature = "nds")]
             Core::Dsperate => false,
         }
     }
 
-    pub fn pair(platform: Platform) -> [Core; 2] {
+    pub fn pair(platform: Platform) -> Option<[Core; 2]> {
         match platform {
-            Platform::Gba | Platform::Gbav => [Core::Mgba, Core::Gpsp],
-            Platform::Gb | Platform::Gbc => [Core::Mgba, Core::Gambatte],
+            Platform::Gba | Platform::Gbav => Some([Core::Mgba, Core::Gpsp]),
+            Platform::Gb | Platform::Gbc => Some([Core::Mgba, Core::Gambatte]),
+            Platform::Ps => Some([Core::PcsxRearmed, Core::SwanStation]),
+            Platform::Pico8 => None,
             #[cfg(feature = "nds")]
-            Platform::Nds => [Core::Dsperate, Core::Dsperate],
+            Platform::Nds => None,
         }
     }
 }
@@ -95,6 +117,8 @@ pub fn core_for_platform(root: &Path, stem: &str, platform: Platform, gb_core: C
         .filter(|core| core.runs(platform))
         .unwrap_or_else(|| match platform {
             Platform::Gb | Platform::Gbc if gb_core.runs(platform) => gb_core,
+            Platform::Ps => Core::PcsxRearmed,
+            Platform::Pico8 => Core::Fake08,
             #[cfg(feature = "nds")]
             Platform::Nds => Core::Dsperate,
             _ => Core::Mgba,

@@ -46,6 +46,9 @@ pub fn picture_for(
     scale: Scale,
     stretch: Stretch,
 ) -> (Sizing, [f32; 4]) {
+    if platform.native() {
+        return (Sizing::Band, WHOLE_TEXTURE);
+    }
     #[cfg(feature = "nds")]
     if platform == Platform::Nds {
         return (Sizing::Fit, WHOLE_TEXTURE);

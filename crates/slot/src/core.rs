@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use slot_retro::{LibretroCore, MockCore, RetroCore};
+use slot_retro::{CoreError, LibretroCore, MockCore, RetroCore};
 use slot_store::{Core, GbColors, Platform};
 
 use crate::root;
@@ -54,24 +54,45 @@ pub fn open_core(
     root: &Path,
     core: Core,
     platform: Platform,
+    rom: &Path,
     serial: &str,
     colour: bool,
     palette: Option<GbColors>,
     link: Option<u8>,
-) -> Opened {
+) -> Result<Opened, CoreError> {
+    if platform == Platform::Ps {
+        slot_store::disc::contents(&root.join("Games/PS"), rom)?;
+    }
+    let stem = platform.stem(rom).unwrap_or_default();
     let paths = candidates(root, core);
     #[cfg(feature = "nds")]
     if core == Core::Dsperate {
-        return open_ds(root, &paths);
+        return Ok(open_ds(root, &paths));
     }
-    match open_named(root, core, platform, serial, colour, palette, link, &paths) {
-        Some(core) => Opened { core, named: true },
+    match open_named(
+        root,
+        core,
+        platform,
+        serial,
+        colour,
+        palette,
+        link,
+        &paths,
+        &crate::persist::core_save_dir_for(root, platform, core, stem),
+    ) {
+        Some(core) => Ok(Opened { core, named: true }),
         None => {
+            if platform.native() {
+                return Err(CoreError::Unsupported(format!(
+                    "{} core is missing or could not open",
+                    core.text()
+                )));
+            }
             report_missing(core, &paths);
-            Opened {
+            Ok(Opened {
                 core: Box::new(MockCore::new()),
                 named: false,
-            }
+            })
         }
     }
 }
@@ -117,7 +138,18 @@ pub fn open_core_for_palette(
     palette: Option<GbColors>,
     paths: &[PathBuf],
 ) -> Box<dyn RetroCore> {
-    open_named(root, core, platform, serial, colour, palette, None, paths).unwrap_or_else(|| {
+    open_named(
+        root,
+        core,
+        platform,
+        serial,
+        colour,
+        palette,
+        None,
+        paths,
+        &root::saves_dir(root),
+    )
+    .unwrap_or_else(|| {
         report_missing(core, paths);
         Box::new(MockCore::new())
     })
@@ -133,15 +165,27 @@ fn open_named(
     palette: Option<GbColors>,
     link: Option<u8>,
     paths: &[PathBuf],
+    saves: &Path,
 ) -> Option<Box<dyn RetroCore>> {
     let bios = root::bios_dir(root);
-    let saves = root::saves_dir(root);
+    if platform.native() && slot_store::fs::create_dir_all(saves).is_err() {
+        return None;
+    }
     for path in paths {
         if !path.exists() {
             continue;
         }
-        match LibretroCore::open_preset(path, &bios, &saves, init_options(core)) {
+        match LibretroCore::open_preset(path, &bios, saves, init_options(core)) {
             Ok(mut opened) => {
+                if platform.native() {
+                    opened.set_native_video();
+                    opened.set_native_input();
+                }
+                // Swan snapshots contain card data. Do not roll back a newer card
+                // until restore/card reconciliation has a verified contract.
+                if core == Core::SwanStation {
+                    opened.disable_states();
+                }
                 apply_core_options(
                     &mut opened,
                     core,
@@ -170,7 +214,8 @@ pub fn palette_for(
     rom: &Path,
     link: Option<u8>,
 ) -> Option<GbColors> {
-    (link.is_none() && platform.hardware() != Platform::Gba && dmg_only(rom)).then_some(chosen)
+    (link.is_none() && matches!(platform, Platform::Gb | Platform::Gbc) && dmg_only(rom))
+        .then_some(chosen)
 }
 
 pub fn dmg_only(rom: &Path) -> bool {
@@ -225,6 +270,7 @@ pub fn colour_option(
                 "GBC only"
             },
         )),
+        Core::PcsxRearmed | Core::SwanStation | Core::Fake08 => None,
     }
 }
 
@@ -250,19 +296,21 @@ pub fn sunlight_at(local_secs: i64) -> u8 {
     (SUNLIGHT_NOON * (360 - from_noon) / 360).max(0) as u8
 }
 
-pub fn blending_off(which: Core) -> (&'static str, &'static str) {
-    match which {
+pub fn blending_off(which: Core) -> Option<(&'static str, &'static str)> {
+    Some(match which {
         Core::Mgba => ("mgba_interframe_blending", "OFF"),
         Core::Gpsp => ("gpsp_frame_mixing", "disabled"),
         Core::Gambatte => ("gambatte_mix_frames", "disabled"),
         #[cfg(feature = "nds")]
         Core::Dsperate => ("dsperate_blending", "off"),
-    }
+        Core::PcsxRearmed | Core::SwanStation | Core::Fake08 => return None,
+    })
 }
 
 pub fn apply_blending_off(core: &mut LibretroCore, which: Core) {
-    let (key, value) = blending_off(which);
-    core.set_option(key, value);
+    if let Some((key, value)) = blending_off(which) {
+        core.set_option(key, value);
+    }
 }
 
 pub fn apply_link_options(core: &mut LibretroCore, which: Core, player: u8) {
@@ -291,6 +339,19 @@ fn init_options(core: Core) -> &'static [(&'static str, &'static str)] {
             ("gambatte_gb_bootloader", "enabled"),
             ("gambatte_rumble_level", "10"),
         ],
+        Core::PcsxRearmed => &[
+            ("pcsx_rearmed_bios", "auto"),
+            ("pcsx_rearmed_memcard1", "libretro"),
+            ("pcsx_rearmed_neon_enhancement_enable", "disabled"),
+            ("pcsx_rearmed_gpu_thread_rendering", "auto"),
+        ],
+        Core::SwanStation => &[
+            ("swanstation_GPU_Renderer", "Software"),
+            ("swanstation_GPU_ResolutionScale", "1"),
+            ("swanstation_GPU_PGXPEnable", "false"),
+            ("swanstation_MemoryCards_Card1Type", "Libretro"),
+            ("swanstation_MemoryCards_Card2Type", "None"),
+        ],
         _ => &[],
     }
 }
@@ -304,7 +365,7 @@ pub fn apply_core_options(
     colour: bool,
     palette: Option<GbColors>,
 ) {
-    if which != Core::Gambatte {
+    if matches!(which, Core::Mgba | Core::Gpsp) {
         core.set_option(&format!("{}_frameskip", which.as_str()), "auto");
     }
     if which == Core::Mgba {
@@ -381,7 +442,7 @@ mod tests {
     fn gambatte_spells_blending_off_and_color_correction() {
         assert_eq!(
             blending_off(Core::Gambatte),
-            ("gambatte_mix_frames", "disabled")
+            Some(("gambatte_mix_frames", "disabled"))
         );
         assert_eq!(
             colour_option(Core::Gambatte, Platform::Gbc, true),
@@ -401,9 +462,12 @@ mod tests {
     fn each_core_spells_frame_blending_off_its_own_way() {
         assert_eq!(
             blending_off(Core::Mgba),
-            ("mgba_interframe_blending", "OFF")
+            Some(("mgba_interframe_blending", "OFF"))
         );
-        assert_eq!(blending_off(Core::Gpsp), ("gpsp_frame_mixing", "disabled"));
+        assert_eq!(
+            blending_off(Core::Gpsp),
+            Some(("gpsp_frame_mixing", "disabled"))
+        );
     }
 
     #[test]

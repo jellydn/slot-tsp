@@ -27,6 +27,27 @@ fn the_reader_gets_the_newest_frame_and_never_the_same_one_twice() {
 }
 
 #[test]
+fn native_geometry_and_cut_follow_the_newest_pixels() {
+    let f = Frames::new(4);
+    publish(&f, 1, 4);
+    let geometry = slot_retro::FrameGeometry {
+        width: 3,
+        height: 2,
+        aspect: 4.0 / 3.0,
+    };
+    f.publish_frame(vec![7; 24], geometry, 19);
+    let latest = f.latest().unwrap();
+    assert_eq!(&latest[..], &[7; 24]);
+    assert_eq!(latest.geometry, geometry);
+    assert_eq!(latest.cut(), 19);
+    drop(latest);
+    publish(&f, 2, 4);
+    let next = f.latest().unwrap();
+    assert_eq!(next.geometry, slot_retro::FrameGeometry::default());
+    assert_eq!(next.cut(), 0);
+}
+
+#[test]
 fn buffers_are_recycled_rather_than_reallocated_per_frame() {
     let f = Frames::new(4);
     publish(&f, 1, 4);

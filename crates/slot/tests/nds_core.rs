@@ -19,11 +19,13 @@ fn a_missing_ds_shim_falls_back_to_a_ds_sized_mock() {
         d.path(),
         Core::Dsperate,
         Platform::Nds,
+        &d.path().join("missing.nds"),
         "",
         false,
         None,
         None,
-    );
+    )
+    .unwrap();
     if opened.named {
         eprintln!("skipped: a real slot_ds is installed beside the test binary");
         return;

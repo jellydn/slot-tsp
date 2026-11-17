@@ -317,7 +317,11 @@ fn played(c: &mut Compositor, panel: (u32, u32), root: &std::path::Path, name: &
     c.set_placeholder_bezel(a.placeholder_bezel());
     c.set_screen_power(a.screen_power());
     c.set_screen_footer(a.screen_footer());
-    c.set_game_bezel(a.shown_game_bezel());
+    c.set_game_bezel(
+        a.shown_game_bezel(),
+        a.playing_platform().hardware() == slot_store::Platform::Gba
+            && slot_gfx::wide(a.game_bezel_size()),
+    );
     c.begin_frame();
     c.upload_game(&[0xff, 0xff, 0xff, 0xff].repeat((SRC_W * SRC_H) as usize));
     let mut draws: Vec<Draw> = Vec::new();

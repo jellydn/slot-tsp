@@ -36,6 +36,9 @@ pub enum Toast {
     Forgotten,
     RestartFailed,
     PoweroffFailed,
+    CoreUnavailable,
+    GameFailed,
+    DiscFailed,
     Collection,
     KidUnlocked,
     TintOff,
@@ -47,7 +50,7 @@ pub enum Toast {
 }
 
 impl Toast {
-    const FIXED: [Toast; 34] = [
+    const FIXED: [Toast; 37] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::GameReset,
@@ -76,6 +79,9 @@ impl Toast {
         Toast::Forgotten,
         Toast::RestartFailed,
         Toast::PoweroffFailed,
+        Toast::CoreUnavailable,
+        Toast::GameFailed,
+        Toast::DiscFailed,
         Toast::Collection,
         Toast::KidUnlocked,
         Toast::TintOff,
@@ -109,7 +115,10 @@ impl Toast {
             Toast::Duplicate(_)
             | Toast::ShotFailed
             | Toast::RestartFailed
-            | Toast::PoweroffFailed => Some(Icon::Alert),
+            | Toast::PoweroffFailed
+            | Toast::CoreUnavailable
+            | Toast::GameFailed
+            | Toast::DiscFailed => Some(Icon::Alert),
             Toast::ShotCaptured => Some(Icon::Camera),
             _ => None,
         }
@@ -179,6 +188,9 @@ impl Toast {
             Toast::Forgotten => "Network forgotten",
             Toast::RestartFailed => "Device reboot failed",
             Toast::PoweroffFailed => "Device shutdown failed",
+            Toast::CoreUnavailable => "Core missing or could not open",
+            Toast::GameFailed => "Game could not load",
+            Toast::DiscFailed => "Disc change failed",
             Toast::Collection => "Collection",
             Toast::KidUnlocked => "Kid Mode is off until restart",
             Toast::TintOff => "Wallpaper Tint: Off",

@@ -58,6 +58,7 @@ pub mod networks;
 pub mod overlay;
 pub mod pacer;
 pub mod panel_turn;
+pub mod performance;
 pub mod persist;
 pub mod prefetch;
 pub mod print_scene;

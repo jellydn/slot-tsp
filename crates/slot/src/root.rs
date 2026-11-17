@@ -16,6 +16,8 @@ pub const DIRS: &[&str] = &[
     "Games/GBAV",
     "Games/GB",
     "Games/GBC",
+    "Games/PS",
+    "Games/PICO8",
     #[cfg(feature = "nds")]
     "Games/NDS",
     "Guides",

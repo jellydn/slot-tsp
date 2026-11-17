@@ -59,3 +59,47 @@ fn the_stick_is_turned_off_from_gameplay_and_saved() {
         "the choice was not saved"
     );
 }
+
+#[test]
+fn ps1_digital_uses_the_saved_stick_choice_but_dualshock_does_not() {
+    for dualshock in [false, true] {
+        for enabled in [false, true] {
+            let d = tmp_root_with_carts(&[]);
+            std::fs::create_dir_all(d.path().join("Games/PS")).unwrap();
+            std::fs::write(d.path().join("Games/PS/Pad.chd"), b"authored").unwrap();
+            std::fs::write(d.path().join("Games/PS/Zzz.chd"), b"authored").unwrap();
+            write_slot_state(
+                d.path(),
+                &SlotState {
+                    clock_set: true,
+                    cart_platform: Some(slot_store::Platform::Ps),
+                    ps_dualshock: dualshock,
+                    left_stick_dpad: enabled,
+                    ..SlotState::default()
+                },
+            )
+            .unwrap();
+            let (mut a, _) = app_booting_at(d.path(), CLOCK_IS_SET);
+            a.set_platform(slot_store::Platform::Ps);
+            a.set_left_stick(true);
+            assert_eq!(a.left_stick_dpad(), enabled && !dualshock);
+            assert_eq!(a.hidden_rows().contains(&QuickRow::LeftStick), dualshock);
+            a.set_left_stick(false);
+            assert!(!a.left_stick_dpad());
+            assert!(a.hidden_rows().contains(&QuickRow::LeftStick));
+            a.set_left_stick(true);
+            a.apply(Action::QuickMenu);
+            for _ in 0..QuickRow::Controls.position(&a.hidden_rows()) {
+                press(&mut a, Btn::Down);
+            }
+            press(&mut a, Btn::A);
+            for _ in 0..QuickRow::InputTest.position(&a.hidden_rows()) {
+                press(&mut a, Btn::Down);
+            }
+            assert_eq!(a.quick_menu(), Some(QuickRow::InputTest));
+            press(&mut a, Btn::A);
+            assert!(a.input_test().is_some());
+            assert!(!a.left_stick_dpad());
+        }
+    }
+}

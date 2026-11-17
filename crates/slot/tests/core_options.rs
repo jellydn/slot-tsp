@@ -354,7 +354,7 @@ fn mgba_answers_the_game_boy_player_logo_except_for_gba_video() {
 #[test]
 fn the_blending_off_slot_sets_is_one_the_core_declares() {
     let _g = common::core_lock();
-    for which in Core::ALL {
+    for which in [Core::Mgba, Core::Gpsp, Core::Gambatte] {
         let path = dylib_for(which);
         if !path.exists() {
             eprintln!("no {} dylib on this host, skipping", which.as_str());
@@ -365,7 +365,7 @@ fn the_blending_off_slot_sets_is_one_the_core_declares() {
         slot::core::apply_core_options(&mut core, which, platform, "auto", false, false, None);
         slot::core::apply_blending_off(&mut core, which);
         every_option_is_one_the_core_has(&core, &format!("{} blending off", which.as_str()));
-        let (key, value) = slot::core::blending_off(which);
+        let (key, value) = slot::core::blending_off(which).expect("Game Boy core");
         assert!(
             core.options().iter().any(|(k, v)| k == key && v == value),
             "{} was never told {key}={value}",

@@ -6,7 +6,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::cable::{self, Cable};
-use slot_retro::{mask_for, ButtonMask, Link, LinkChannel, RetroCore, Rumble, NETPACKET_RELIABLE};
+use slot_retro::{
+    mask_for, ButtonMask, Controller, Link, LinkChannel, RetroCore, Rumble, NETPACKET_RELIABLE,
+};
 
 use crate::audio::Ring;
 use crate::drc::{drc_ratio, drc_target};
@@ -84,11 +86,15 @@ enum Cmd {
     EndLink,
     BeginCable(u8, Box<dyn LinkChannel>),
     SetOption(String, String),
+    Analog([[i16; 2]; 2]),
+    Controller(Controller),
+    Disc(u32, Sender<bool>),
     Refresh,
     Reset,
 }
 
 struct Shared {
+    performance: crate::performance::Counters,
     input: AtomicU16,
     touch: AtomicU32,
     lid: AtomicBool,
@@ -98,6 +104,9 @@ struct Shared {
     rewind: AtomicBool,
     rewind_fill: AtomicU8,
     recording: AtomicBool,
+    supports_states: AtomicBool,
+    discs: AtomicU32,
+    disc: AtomicU32,
     stop: AtomicBool,
     volume: AtomicU8,
     fast_quarters: AtomicU32,
@@ -193,6 +202,7 @@ impl EmuHandle {
         let (w, h) = core.video_size();
         let frames = Frames::new((w * h * 4) as usize);
         let shared = Arc::new(Shared {
+            performance: crate::performance::Counters::default(),
             input: AtomicU16::new(0),
             touch: AtomicU32::new(NO_TOUCH),
             lid: AtomicBool::new(false),
@@ -202,6 +212,7 @@ impl EmuHandle {
             rewind: AtomicBool::new(false),
             rewind_fill: AtomicU8::new(0),
             recording: AtomicBool::new(true),
+            supports_states: AtomicBool::new(core.supports_states()),
             stop: AtomicBool::new(false),
             volume: AtomicU8::new(100),
             fast_quarters: AtomicU32::new(FAST_STEPS * 4),
@@ -221,6 +232,8 @@ impl EmuHandle {
             requested: AtomicBool::new(false),
             clock: Mutex::new(Clock::default()),
             clocked: Condvar::new(),
+            discs: AtomicU32::new(0),
+            disc: AtomicU32::new(0),
         });
         let (tx, rx) = channel();
         let worker = Worker {
@@ -297,6 +310,27 @@ impl EmuHandle {
         );
     }
 
+    pub fn set_analog(&self, sticks: [[i16; 2]; 2]) {
+        request(&self.cmds, &self.shared, Cmd::Analog(sticks));
+    }
+
+    pub fn set_controller(&self, controller: Controller) {
+        request(&self.cmds, &self.shared, Cmd::Controller(controller));
+    }
+
+    pub fn discs(&self) -> (u32, u32) {
+        (
+            self.shared.discs.load(Ordering::Acquire),
+            self.shared.disc.load(Ordering::Acquire),
+        )
+    }
+
+    pub fn select_disc(&self, index: u32) -> bool {
+        let (tx, rx) = channel();
+        request(&self.cmds, &self.shared, Cmd::Disc(index, tx))
+            && answer(rx, "disc change").unwrap_or(false)
+    }
+
     pub fn set_fixed_present(&self, fixed: bool) {
         self.shared.fixed_present.store(fixed, Ordering::Relaxed);
     }
@@ -365,6 +399,17 @@ impl EmuHandle {
 
     pub fn latest_frame(&self) -> Option<FrameRef> {
         self.frames.latest()
+    }
+
+    pub fn set_performance(&self, enabled: bool) {
+        self.shared
+            .performance
+            .enabled
+            .store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn performance(&self) -> crate::performance::Totals {
+        self.shared.performance.read()
     }
 
     pub fn set_speed(&self, speed: Speed) {
@@ -466,6 +511,10 @@ pub struct EmuSnapshot {
 }
 
 impl Snapshot for EmuSnapshot {
+    fn supports_states(&self) -> bool {
+        self.shared.supports_states.load(Ordering::Acquire)
+    }
+
     fn state(&self) -> Option<Vec<u8>> {
         let (tx, rx) = channel();
         request(&self.cmds, &self.shared, Cmd::Save(tx)).then_some(())?;
@@ -598,6 +647,12 @@ impl Worker {
                 .store(CoreState::Failed as u8, Ordering::Release);
             return;
         }
+        self.shared
+            .supports_states
+            .store(core.supports_states(), Ordering::Release);
+        self.shared
+            .discs
+            .store(core.disc_count(), Ordering::Release);
         if let Some(sav) = sav {
             eprintln!(
                 "slot: emu: save ram, {} bytes, at {:.1} ms",
@@ -609,7 +664,7 @@ impl Worker {
                 self.shared.sav_refused.store(true, Ordering::Release);
             }
         }
-        if let Some(resume) = resume {
+        if let Some(resume) = resume.filter(|_| core.supports_states()) {
             eprintln!(
                 "slot: emu: resume state, {} bytes, at {:.1} ms",
                 resume.len(),
@@ -620,13 +675,14 @@ impl Worker {
                 self.shared.resume_refused.store(true, Ordering::Release);
             }
         }
-        let av = core.av_info();
+        let mut av = core.av_info();
+        let sync_to_display = core.sync_to_display();
         let device_hz = match ring.sample_rate() {
             0 => av.sample_rate,
             hz => hz as f64,
         };
         let core_hz = match av.fps {
-            fps if fps > 0.0 => av.sample_rate / (fps * PRESENT.as_secs_f64()),
+            fps if sync_to_display && fps > 0.0 => av.sample_rate / (fps * PRESENT.as_secs_f64()),
             _ => av.sample_rate,
         };
         let mut resampler = Resampler::new(core_hz, device_hz);
@@ -664,6 +720,10 @@ impl Worker {
             for cmd in self.cmds.try_iter() {
                 self.apply(cmd, core.as_mut(), &mut transport, &mut cable, &link);
             }
+            // PCSX states restore their own disc index, including across sessions.
+            self.shared
+                .disc
+                .store(core.selected_disc(), Ordering::Release);
 
             if let Some(t) = transport.as_mut() {
                 match cable.as_mut() {
@@ -707,9 +767,12 @@ impl Worker {
             flush_outbound(&mut transport, &link);
 
             let speed = self.speed();
+            let measuring = self.shared.performance.enabled.load(Ordering::Relaxed);
             self.shared.observed.store(speed as u8, Ordering::Release);
             let ff_sound = self.shared.ff_sound.load(Ordering::Relaxed);
-            let rewinding = speed != Speed::Paused && self.shared.rewind.load(Ordering::Relaxed);
+            let rewinding = core.supports_states()
+                && speed != Speed::Paused
+                && self.shared.rewind.load(Ordering::Relaxed);
             let gate = (
                 speed == Speed::Fast && !ff_sound,
                 speed == Speed::Paused || rewinding,
@@ -719,7 +782,8 @@ impl Worker {
                 ring.set_idle(gate.1);
                 gated = gate;
             }
-            let lock = self.shared.driven.load(Ordering::Relaxed)
+            let lock = sync_to_display
+                && self.shared.driven.load(Ordering::Relaxed)
                 && speed == Speed::Normal
                 && !rewinding
                 && transport.is_none();
@@ -755,7 +819,7 @@ impl Worker {
                     }
                     core.set_frame_skip(false);
                     core.run_frame(ButtonMask(0));
-                    self.publish(core.video_xrgb8888());
+                    self.publish(core.as_ref());
                 }
                 self.shared
                     .rewind_fill
@@ -781,7 +845,11 @@ impl Worker {
                     ran += 1;
                     let last = ran >= ceiling
                         || (speed == Speed::Fast && cost.last(began.elapsed(), budget));
-                    let input = mask_for(core.takes_xy(), input, turbo_frame);
+                    let input = if !core.uses_gb_buttons() {
+                        input
+                    } else {
+                        mask_for(core.takes_xy(), input, turbo_frame)
+                    };
                     turbo_frame = turbo_frame.wrapping_add(1);
                     core.set_frame_skip(!last);
                     let frame_began = Instant::now();
@@ -826,6 +894,16 @@ impl Worker {
                         None => core.run_frame(input),
                     }
                     let took = frame_began.elapsed();
+                    if measuring {
+                        self.shared
+                            .performance
+                            .core_ns
+                            .fetch_add(took.as_nanos() as u64, Ordering::Relaxed);
+                        self.shared
+                            .performance
+                            .steps
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                     if last {
                         drawn = took;
                     } else {
@@ -877,26 +955,42 @@ impl Worker {
                     }
                 }
                 flush_outbound(&mut transport, &link);
-                self.publish(core.video_xrgb8888());
+                self.publish(core.as_ref());
                 self.frame_done(served);
 
                 since_snapshot += 1;
                 if cable.is_some()
                     || speed == Speed::Fast
+                    || !core.supports_states()
                     || !self.shared.recording.load(Ordering::Relaxed)
                 {
                     since_snapshot = 0;
                 }
                 if since_snapshot >= SNAPSHOT_EVERY {
                     since_snapshot = 0;
+                    let snapshot_began = measuring.then(Instant::now);
                     if let Ok(state) = core.serialize() {
                         rewind.push(state);
                         self.shared
                             .rewind_fill
                             .store(rewind.fill(), Ordering::Relaxed);
                     }
+                    if let Some(began) = snapshot_began {
+                        self.shared
+                            .performance
+                            .rewind_ns
+                            .fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                    }
                 }
 
+                let audio_began = measuring.then(Instant::now);
+                if !sync_to_display {
+                    let updated = core.av_info();
+                    if updated.sample_rate != av.sample_rate {
+                        resampler = Resampler::new(updated.sample_rate, device_hz);
+                    }
+                    av = updated;
+                }
                 let audio = core.take_audio();
                 if speed == Speed::Normal || ff_sound {
                     let target = drc_target(ring.capacity_frames());
@@ -923,6 +1017,12 @@ impl Worker {
                             ring.xruns()
                         );
                     }
+                }
+                if let Some(began) = audio_began {
+                    self.shared
+                        .performance
+                        .audio_ns
+                        .fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
                 }
             }
 
@@ -968,7 +1068,13 @@ impl Worker {
                 continue;
             }
             due = 0;
-            deadline += PRESENT * span;
+            let period = match av.fps {
+                fps if !sync_to_display && fps.is_finite() && (1.0..=1000.0).contains(&fps) => {
+                    Duration::from_secs_f64(1.0 / fps)
+                }
+                _ => PRESENT,
+            };
+            deadline += period * span;
             let now = Instant::now();
             match deadline.checked_duration_since(now) {
                 Some(wait) => std::thread::sleep(wait),
@@ -994,7 +1100,30 @@ impl Worker {
         cable: &mut Option<Cable>,
         link: &Link,
     ) {
+        if !core.supports_states()
+            && matches!(
+                &cmd,
+                Cmd::Save(_) | Cmd::Load(_) | Cmd::Refresh | Cmd::BeginCable(_, _)
+            )
+        {
+            return;
+        }
         match cmd {
+            Cmd::Analog(sticks) => core.set_analog(sticks),
+            Cmd::Controller(controller) => core.set_controller(controller),
+            Cmd::Disc(index, reply) => {
+                let changed = match core.select_disc(index) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        eprintln!("slot: {e}");
+                        false
+                    }
+                };
+                self.shared
+                    .disc
+                    .store(core.selected_disc(), Ordering::Release);
+                let _ = reply.send(changed);
+            }
             Cmd::Save(reply) => match core.serialize() {
                 Ok(state) => {
                     let _ = reply.send(self.for_card(state));
@@ -1014,7 +1143,7 @@ impl Worker {
                     core.run_frame(ButtonMask(0));
                     core.set_frame_skip(false);
                     core.run_frame(ButtonMask(0));
-                    self.publish(core.video_xrgb8888());
+                    self.publish(core);
                     let _ = core.take_audio();
                     if let Err(e) = core.unserialize(&state) {
                         eprintln!("slot: refresh: {e}");
@@ -1026,7 +1155,10 @@ impl Worker {
                 let _ = reply.send(core.save_ram());
             }
             Cmd::Thumb(reply) => {
-                let _ = reply.send(crate::thumb::png(core.video_xrgb8888()));
+                let _ = reply.send(crate::thumb::png_frame(
+                    core.video_xrgb8888(),
+                    core.video_geometry(),
+                ));
             }
             Cmd::BeginLink(client_id, t) => {
                 self.shared.link_lost.store(false, Ordering::Relaxed);
@@ -1097,14 +1229,29 @@ impl Worker {
             .tick
     }
 
-    fn publish(&self, video: &[u8]) {
+    fn publish(&self, core: &dyn RetroCore) {
+        let began = self
+            .shared
+            .performance
+            .enabled
+            .load(Ordering::Relaxed)
+            .then(Instant::now);
         let mut buf = self.frames.take_write();
         buf.clear();
-        buf.extend_from_slice(video);
-        self.frames
-            .publish(buf, self.shared.cuts.load(Ordering::Relaxed));
+        buf.extend_from_slice(core.video_xrgb8888());
+        self.frames.publish_frame(
+            buf,
+            core.video_geometry(),
+            self.shared.cuts.load(Ordering::Relaxed),
+        );
         self.shared.published.fetch_add(1, Ordering::Relaxed);
         crate::latency::published();
+        if let Some(began) = began {
+            self.shared
+                .performance
+                .copy_ns
+                .fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
     }
 
     fn speed(&self) -> Speed {

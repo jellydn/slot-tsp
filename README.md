@@ -4,6 +4,27 @@
 
 Install stock packages by **copying content to an existing FAT32 card**, not flashing an OS image. Stock kernel, drivers and services stay in place.
 
+## Experimental Input Test — test.12
+
+[stock-tsp-0.3.0-test.12](https://github.com/jellydn/slot-tsp/releases/tag/stock-tsp-0.3.0-test.12)
+adds **Menu → Controls → Input Test** to test.11. It shows observed raw events,
+logical edges, effective PS1 buttons and both normalized sticks. Select a PS1
+cart first; test PCSX and Swan, each in Digital and DualShock mode. Release B
+or tap Menu to return. Test input is not forwarded to a game or app shortcut.
+
+**This is a diagnostic, not a proven shoulder/stick binding fix.** The physical
+BOTH-core root cause, early stock boot logo, startup volume synchronization,
+automatic PS1 art and PS1 speed/audio remain unresolved. The owner reports
+test.11 launches and PICO art is good; this is not full hardware acceptance.
+PICO art, pinned cores, PCSX default and Swan Software save safeguards remain.
+Incomplete shared-context renderer work is excluded; committed diagnostics
+are source-only, not installed runtime integration.
+
+Read the [test.12 notes and installation limits](knulli/RELEASE-STOCK-0.3.0-test.12.md)
+and verify the attached checksums. Back up the card and preserve games, BIOS,
+saves, settings and custom splash. Stable **0.2.0 remains Latest**; test.12 is
+an experimental prerelease, not an OS image or firmware update.
+
 ## Verified status — 5 November 2026
 
 Stable stock package: **[stock-tsp-0.2.0](https://github.com/jellydn/slot-tsp/releases/tag/stock-tsp-0.2.0)** for stock firmware **1.1.1, UI 20251128, kernel 4.9.191**. Download `slot-tsp-stock-0.2.0-fat32.zip` and `SHA256SUMS`. Read the [release notes](knulli/RELEASE-STOCK-0.2.0.md) before installing. This combines built-in RomM and the Wi-Fi wake stale-busy correction. **The rebuilt combined executable is host-verified; hardware acceptance is pending.** “Stable” identifies the release channel, not a hardware pass. The earlier [0.1.0 release](https://github.com/jellydn/slot-tsp/releases/tag/stock-tsp-0.1.0) remains available.
@@ -16,6 +37,16 @@ Stable stock package: **[stock-tsp-0.2.0](https://github.com/jellydn/slot-tsp/re
 | Included controls | **Device → Restart / Shutdown: select a row, A activates, B returns.** X/Y do not activate power actions. Save/flush/settle and visible failure handling remain in place. Real power actions passed on the earlier build; the current A-select mapping is host-tested, not a separate new hardware pass. |
 | Wi-Fi scope | Explicit Connect owns one bounded wlan0 DHCP client after association; Disconnect preserves profiles. Competing clients still block takeover. After stock takes over, fresh association plus valid IPv4 can clear only the stale busy indicator without adopting its client. No Internet, repeated cold-boot/reconnect/wake reliability or persistence claim. |
 | Unresolved | Physical LED-off, Fn and real sleep/wake (white/gray failure). Early internal artwork/LED flash can remain before the SD splash. |
+
+**Current hardware limitation:** the owner still reports **Network In Use** after
+physical Power off/on. A later read-only USB capture identifies the running
+executable as the older `stock-tsp-0.2.0-rc.1` RomM preview, before the Wi-Fi
+handoff patch. That identifies the failing build; it does not establish a
+hardware pass for the patched build or explain every wake failure. Wi-Fi wake
+remains unresolved on hardware. Current source already includes the existing
+correction; the preview/current-source regression fails before it and passes
+after it. No additional Wi-Fi patch is supported by this capture. A corrected
+candidate still needs physical Power-button testing.
 
 LED controls and stock **Lid Power Off** show **Unavailable**. Slot Fn actions are disabled; physical lights and stock Fn policy are not changed. The TG5040 has no lid; no inactivity timer is added.
 
@@ -57,7 +88,7 @@ These steps do not recover a running driver hang; a conflicting updater can bypa
 
 ## Games today
 
-**GB/GBC/GBA only.** ROMs must be unzipped; `.zip`/`.7z` are unsupported. Gameplay uses a 240 × 160 canvas, with GB/GBC centered inside it.
+**The frozen 0.2.0 package has GB/GBC/GBA only.** ROMs must be unzipped; `.zip`/`.7z` are unsupported. These systems use a 240 × 160 canvas, with GB/GBC centered inside it. The separate two-core test candidate is described below.
 
 | System | Folder below `Slot/` | Core choices in source |
 | --- | --- | --- |
@@ -88,26 +119,181 @@ an app in `Apps/`. Existing release ZIPs do not gain this feature.
    and pairing in `Config/romm.conf` below the Slot root. Keep that file private.
    Approve both ROM and platform read access. If paired with an older build,
    Disconnect and pair again to grant the new `platforms.read` permission.
-4. Open **Library**. Left/Right selects GB, GBC or GBA. Up/Down selects a
+4. Open **Library**. Left/Right selects a system. Up/Down selects a
    game; A downloads it. Each page has up to 20 games. Use Next page or
    Previous page for more games; A on the heading reloads the page.
 5. B cancels a download or returns to the RomM menu. The shelf refreshes
    when you leave the library. Downloads use `Games/GB`, `Games/GBC` or
    `Games/GBA` below the same Slot root on either OS.
 
-Only individual ROMs and ZIPs with exactly one playable ROM are supported.
+Individual ROMs and ZIPs with exactly one playable ROM are supported.
 ZIPs are unpacked before installation; neither ZIP nor 7z archives are left
-on the shelf. 7z and multi-file entries show **Unsupported**. Failed or
+on the shelf. 7z and unsupported multi-file entries show **Unsupported**. Failed or
 cancelled downloads remove temporary files; an existing game is not replaced.
 Library errors allow retry. Remote receive polling pauses while the library
 is open. Box art, save sync and collections are not part of this client.
 
+**Unreleased source change:** the library selector also offers PS1 and PICO-8.
+PS1 downloads accept single-file `.chd` and `.pbp` images into `Games/PS`;
+PICO-8 downloads accept `.p8` text carts and `.p8.png` cart images into
+`Games/PICO8`. ZIPs must contain exactly one accepted game file. Downloads
+check file headers (and decode PNGs at the cart's 160×205 dimensions); this
+does not prove that a game runs. Files larger than FAT32's 4-GiB-minus-1-byte
+limit are rejected.
+
+Test.14 also accepts bounded PS1 BIN/CUE bundles, with one CUE or
+one M3U that orders the CUE discs. Names must be flat, unique and safe for
+FAT32. References must resolve exactly to the supplied files, without missing
+or unused members, traversal, symlinks or case-colliding names. This first
+implementation supports raw 2352-byte data-image BIN files and BINARY CUE
+descriptors; cooked 2048-byte images, separate audio-only BINs, WAV files,
+nested paths and bundled ZIPs are not supported.
+
+Each member is downloaded by its own file ID into a private staging directory.
+After validation, payloads move into `Games/PS/.romm-<ROM ID>`. One top-level
+M3U becomes the library-visible commit point; it is published last using a
+no-replace rename. Existing entries and payload folders are never overwritten.
+Cancellation and handled failures remove this transaction's temporary payloads.
+A process/power interruption can leave an invisible payload folder; it is not
+automatically deleted or reused. Filesystem support for no-replace rename and
+directory sync is required; unsupported filesystems fail without publishing.
+Deleting the top-level M3U keeps payloads, saves, cards, states and art.
+This is offline/authored-test coverage, not live RomM or device acceptance.
+
+RomM's `psx`/`ps` platform names map to PS1, and `pico`/`pico8`/`pico-8` map
+to PICO-8. `sega-pico` is a different system and is not mapped. In the development
+source, completed downloads enter their native shelves. Launch requires the
+matching PCSX ReARMed or fake-08 library; a missing native core reports an error,
+not a mock game. The published stock 0.2.0 package still offers only GB/GBC/GBA.
+
 These are source capabilities, not a hardware verification claim. Stock
 Wi-Fi must have a working IP connection before browsing.
 
-## Planned systems — not supported yet
+## New systems — development status
 
-[Issue #2](https://github.com/jellydn/slot-tsp/issues/2): PICO-8, Neo Geo, Mega Drive, arcade/FBNeo/MAME, PS1, N64, NDS and Dreamcast. The [implementation plan](knulli/ISSUE-2-PLAN.md) covers dependencies, ABI/GPU feasibility and acceptance gates. **None is supported yet.**
+[Issue #2](https://github.com/jellydn/slot-tsp/issues/2) covers PICO-8, Neo Geo, Mega Drive, arcade/FBNeo/MAME, PS1, N64, NDS and Dreamcast. PS1 and PICO-8 are the first development milestones; the other systems are not implemented. The [implementation plan](knulli/ISSUE-2-PLAN.md) records the feasibility and acceptance gates.
+
+The combined `stock-tsp-0.3.0-test.9` follow-up adds PCSX ReARMed and fake-08,
+including the current fork's upstream sync, RomM and Wi-Fi handoff correction.
+It is a test build, not a stable update or a handheld acceptance claim. The
+stable 0.2.0 downloads are unchanged. Read the
+[combined test checklist](cores/ps1-pico8/TEST-CHECKLIST.md) and
+[core build and licence notes](cores/ps1-pico8/README.md).
+
+**Test.9 is not hardware accepted.** It includes the PICO-8 exit/resume repair,
+local labels, PS1 rewind defaults and optional SwanStation software comparison
+core. The owner reports PICO still does not work, without identifying whether
+the failure is labels, launch, exit or persistence. Swan is subjectively a bit
+better but reported at 30–40 fps with choppy audio; the game, scene and metric
+are not confirmed. This is not full-speed acceptance. See the
+[latest status and provenance](cores/ps1-pico8/STATUS.md) and historical
+[crash follow-up](cores/ps1-pico8/README.md#test3-crash-follow-up--local-source-not-deployed).
+Keep existing states/backups; cross-build quick states are unsupported.
+
+RomM downloads show received bytes and a total/percentage when the HTTP server
+supplies a length. Unknown-length transfers show bytes without an invented
+percentage or ETA. Installation, completion and errors are separate; B cancels
+and A retries. PICO-8 validation inspects the content, so PNG-encoded carts
+named `.p8` work too. Empty files, HTML responses and malformed/wrong-size PNGs
+are rejected. A valid container does not guarantee fake-08 game compatibility.
+
+| Test system | Folder below `Slot/` | Content / save scope |
+| --- | --- | --- |
+| PlayStation / PCSX ReARMed | `Games/PS` | CUE with sibling tracks, CHD, PBP, bounded M3U; first memory card, core-specific states and disc selection |
+| PlayStation / optional SwanStation | `Games/PS` | Software comparison only; isolated cards; states, quick states, automatic resume and rewind disabled |
+| PICO-8 / fake-08 | `Games/PICO8` | `.p8` and `.p8.png`; cart data, patched build-specific quick states and resume; no rewind |
+
+PS1 uses software NEON video and the AArch64 Ari64 dynarec. User BIOS files go
+under `Slot/BIOS/` (for example `scph5501.bin`); none are supplied. Authored HLE
+fixtures pass on the host, not real-BIOS game compatibility or TG5040 speed.
+Choose **Digital** or **DualShock** in the game's settings. Both sticks and
+four face buttons are independent; the existing mapper remains available.
+
+Read-only TG5040 input capture confirmed left X/Y, right
+RX/RY, and Z/RZ triggers. The owner confirmed the current left-stick digital
+navigation works and that the TSP has **no physical L3/R3**. These controls
+remain unsupported; no substitute click mapping is assigned. Games that
+require L3/R3 will need an agreed alternate binding. Keep the existing button
+mapper and stock A/B normalization; analog gameplay is a separate test gate.
+fake-08 supports cart data and the pinned patch's quick states/resume. States
+are tied to the exact core build, not portable or legacy imports. Unsupported
+or oversized Lua snapshots fail explicitly. Rewind stays disabled. This is not
+the official PICO-8 runtime or a guarantee for every cartridge.
+
+### Art, bezels and GameBit — local follow-up
+
+The source now exposes PS1 and PICO-8 in the existing GameBit web manager.
+Game art uses the existing cartridge presentation and label upload path, not
+a new art service. Use `Labels/PS/<complete game filename>.png` or
+`Labels/PICO8/<complete game filename>.png`; GameBit's game page can upload
+the label. No commercial game art is bundled.
+
+**Local PICO-8 labels (development source):** Fetch Missing Labels reads the
+optional 128×128 `__label__` in `.p8` files or the visible label in standard
+160×205 `.p8.png` cartridges. Cart Studio and the shared fetch-label endpoint
+use the same local path. No account, Internet connection or cart execution is
+needed. Existing/custom labels are kept. Both printer styles use the embedded
+image; absent, malformed, oversized (over 2 MiB) or unsupported carts are not
+guessed. Nintendo catalogue fetching is unchanged; PS1 art remains manual.
+This is not permission to redistribute cartridge images or game artwork.
+
+**PS1 rewind default (development source):** fresh/unset PS1 settings default
+to off for both PCSX and the optional Swan comparison path. An existing explicit
+global `rewind=1` or `rewind=0` is preserved until PS1 is changed separately;
+`rewind_ps` then stores that PS1 choice without changing Nintendo settings.
+PICO-8 rewind and cores without save-state support remain unavailable. This
+reduces optional recording overhead, not a verified Bloody Roar II speed fix.
+
+Each native system has an independent **Bezel** setting: None, Default or a
+custom PNG under `Bezels/PS/` or `Bezels/PICO8/`. Default is a procedural dark
+border. Native borders sit behind the complete game image, retain its reported
+aspect and fill only unused space. GameBit's Bezel tab manages those custom
+files. These changes and the serialization repair are not in the preserved
+test.2 ZIP. See the [repair notes](cores/ps1-pico8/README.md#pico-8-quick-state-repair)
+for limits and real-core/Slot tests. Test.9 was installed with separate owner
+approval and verified backup/readback; this draft does not authorise another
+SD update or publish a stable package.
+
+Test.14: Menu → Screen includes PlayStation and PICO-8 pages
+for their existing bezel settings. In-game Settings → Screen → Developer
+contains the Performance HUD; the shelf also offers Screen → Developer.
+The HUD remains off at startup and is not saved.
+
+On a 16:9 TSP panel, GBA now offers None, Default and custom PNG bezels under
+Screen → Game Boy Advance → Bezel (or in-game Settings → Screen → Bezel).
+Default uses original geometric side panels behind the centred 3:2 picture;
+it does not stretch the game. Existing selections, custom files and 4:3
+AGS-102 behaviour are retained. Choose Default to enable the new border;
+this change does not change saved defaults.
+
+On the library shelf, **X** opens a game-delete confirmation. Cancel is selected
+first; Right selects Delete, A chooses, and B cancels. The prompt names the
+single file to remove. Saves, cards, states, configuration and custom art stay.
+Deleting a CUE or M3U removes only that descriptor, not its tracks or discs;
+playlist members can become visible again after refresh. Shared PS files,
+symlink selections and uncertain disc references block deletion. No folder or
+game-family cleanup is performed. X replaces the old default Remove Recent
+shortcut; that action can still be assigned another key under Controls → Shelf.
+An existing custom X action takes priority and disables this delete shortcut.
+See the [test.14 notes and checklist](knulli/RELEASE-STOCK-0.3.0-test.14.md).
+The TSP DualShock all-button loss remains unreproduced and unfixed. Digital
+stick steering uses the existing saved setting; host analog acceptance does
+not establish handheld acceptance or native analog support in Road Rash.
+
+### Stock TSP controls
+
+Stock firmware owns hardware volume. Slot uses unity PCM gain and ignores its
+own volume/mute shortcuts. The local brightness follow-up uses the TG5040
+`/dev/disp` LCD brightness ioctls with live readback: ten hardware steps, no
+startup replay, no automatic restoration and no saved Slot dim overlay. It
+reads the current hardware level before each adjustment so changes made by
+stock controls are not replaced by stale preferences. Unavailable now means
+the display cannot be opened or its brightness cannot be read, not that stock
+firmware lacks brightness support. Existing saved preferences and Knulli/
+nonstock controls are unchanged. Blue-light/saturation/contrast remain software
+pixel effects, not panel calibration. The owner reported brightness working
+after test.4; this does not establish stock OSD or suspend acceptance. Startup
+volume and decorative LED control remain unresolved.
 
 ## Knulli port
 

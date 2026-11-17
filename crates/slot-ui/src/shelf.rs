@@ -38,7 +38,7 @@ pub fn foot_y(canvas: Canvas, h: f32) -> f32 {
 
 pub fn box_size(platform: Platform) -> (u32, u32) {
     match platform {
-        Platform::Gba | Platform::Gbav => (318, 282),
+        Platform::Gba | Platform::Gbav | Platform::Ps | Platform::Pico8 => (318, 282),
         #[cfg(feature = "nds")]
         Platform::Nds => (318, 282),
         Platform::Gb | Platform::Gbc => (312, 277),

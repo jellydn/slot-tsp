@@ -27,6 +27,10 @@ impl Power {
         }
     }
 
+    pub fn backlight_step(&self) -> Option<u8> {
+        self.platform.backlight_step()
+    }
+
     pub fn set_bottom_backlight(&mut self, on: bool) {
         self.platform.set_bottom_backlight(on);
     }

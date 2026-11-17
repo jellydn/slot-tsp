@@ -36,6 +36,7 @@ pub struct Compositor {
     game: GamePass,
     sprites: Sprites,
     game_bezel: Option<TexId>,
+    bezel_background: bool,
     overlay: Option<crate::overlay::Overlay>,
     overlay_pass: crate::overlay::OverlayPass,
     overlay_full_drawn: bool,
@@ -98,6 +99,7 @@ impl Compositor {
                 game: GamePass::new()?,
                 sprites: Sprites::new()?,
                 game_bezel: None,
+                bezel_background: false,
                 overlay: None,
                 overlay_pass: crate::overlay::OverlayPass::new()?,
                 overlay_full_drawn: false,
@@ -135,6 +137,10 @@ impl Compositor {
         self.game.upload(xrgb8888, &self.quad);
     }
 
+    pub fn upload_native_game(&mut self, xrgb8888: &[u8], size: (u32, u32), aspect: f32) -> bool {
+        self.game.upload_native(xrgb8888, size, aspect, &self.quad)
+    }
+
     pub fn draw_game(&mut self) {
         self.in_game_rect(|c| c.game.draw(&c.quad));
     }
@@ -145,6 +151,11 @@ impl Compositor {
             match *item {
                 Draw::Game => {
                     self.sprites.draw(&items[from..i], &self.quad);
+                    if self.game.native_video() || self.bezel_background {
+                        if let Some(bezel) = self.panel_bezel() {
+                            self.sprites.draw(&[bezel], &self.quad);
+                        }
+                    }
                     self.in_game_rect(|c| {
                         c.draw_placeholder_bezel();
                         c.game.draw(&c.quad);
@@ -153,12 +164,20 @@ impl Compositor {
                             c.draw_game_bezel();
                         }
                     });
-                    if let Some(bezel) = self.panel_bezel() {
+                    if let Some(bezel) = self
+                        .panel_bezel()
+                        .filter(|_| !self.game.native_video() && !self.bezel_background)
+                    {
                         self.sprites.draw(&[bezel], &self.quad);
                     }
                 }
                 Draw::Shot { tex } => {
                     self.sprites.draw(&items[from..i], &self.quad);
+                    if self.game.native_video() || self.bezel_background {
+                        if let Some(bezel) = self.panel_bezel() {
+                            self.sprites.draw(&[bezel], &self.quad);
+                        }
+                    }
                     if let Some(tex) = self.sprites.source(tex) {
                         self.in_game_rect(|c| {
                             c.game.draw_still(tex, &c.quad);
@@ -268,8 +287,9 @@ impl Compositor {
         }
     }
 
-    pub fn set_game_bezel(&mut self, tex: Option<TexId>) {
+    pub fn set_game_bezel(&mut self, tex: Option<TexId>, background: bool) {
         self.game_bezel = tex;
+        self.bezel_background = background;
     }
 
     pub fn set_placeholder_bezel(&mut self, colour: Option<[f32; 4]>) {
@@ -539,9 +559,12 @@ impl Compositor {
     }
 
     fn panel_bezel(&self) -> Option<Draw> {
-        let tex = self
-            .game_bezel
-            .filter(|_| crate::bezel::framed(self.window))?;
+        let tex = self.game_bezel.filter(|_| {
+            self.game.native_video()
+                || self.bezel_background
+                || crate::bezel::framed(self.window)
+                || crate::bezel::wide(self.window)
+        })?;
         let canvas = Canvas::of(self.window);
         Some(Draw::Tex {
             x: 0.0,
@@ -556,7 +579,8 @@ impl Compositor {
 
 impl Compositor {
     fn in_game_rect(&mut self, draw: impl FnOnce(&mut Self)) {
-        if !crate::bezel::framed(self.window) {
+        let wide_game = crate::bezel::wide(self.window) && !self.game.native_video();
+        if !crate::bezel::framed(self.window) && !wide_game {
             return draw(self);
         }
         let (x, top, w, h) = match self.game_panel {

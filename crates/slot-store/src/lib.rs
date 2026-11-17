@@ -11,6 +11,7 @@ pub mod cart_shell;
 mod collections;
 mod config;
 mod core;
+pub mod disc;
 pub mod fs;
 pub mod gb;
 mod gb_palette;
@@ -22,6 +23,7 @@ pub mod ini;
 mod nds_header;
 pub mod overlay;
 mod platform;
+mod remove;
 mod ring;
 mod scan;
 mod shots;
@@ -54,6 +56,7 @@ pub use guides::{
 pub use nds_header::{read_banner, NdsBanner};
 pub use overlay::{overlay_entries, OverlayEntry, OverlayPart};
 pub use platform::Platform;
+pub use remove::{remove_game, validate_remove_game};
 pub use ring::{is_stamp, StateEntry, StateRing, RING_MAX};
 pub use scan::{
     clean_label, initial, is_hidden, label_tags, listing, scan, scan_platform, sort_key, Cart,

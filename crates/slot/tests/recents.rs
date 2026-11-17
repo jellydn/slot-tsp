@@ -23,6 +23,12 @@ fn recent(platform: Platform, stem: &str) -> Recent {
 }
 
 fn boot_with(root: &Path, state: SlotState) -> App {
+    let mut keys = slot_store::CarouselKeys::default();
+    keys.set(
+        slot_store::CarouselAction::ForgetRecent,
+        slot_store::Binding::plain(slot_store::Device::B),
+    );
+    slot_store::write_carousel(root, &keys).unwrap();
     write_slot_state(
         root,
         &SlotState {
@@ -255,11 +261,11 @@ fn three_recents(root: &Path) -> App {
 }
 
 #[test]
-fn x_on_recents_takes_the_selected_game_off_and_selects_the_next() {
+fn the_bound_remove_recent_action_selects_the_next_without_deleting_the_game() {
     let d = card();
     let mut a = three_recents(d.path());
     assert_eq!(a.selected_stem(), Some("Tetris"));
-    press(&mut a, Btn::X);
+    press(&mut a, Btn::B);
     assert_eq!(a.shelf_platform_name(), Some("Recents"));
     assert_eq!(a.selected_stem(), Some("Emerald"));
     assert_eq!(
@@ -294,7 +300,7 @@ fn removing_the_last_recent_moves_off_the_empty_shelf() {
         },
     );
     assert_eq!(a.shelf_platform_name(), Some("Recents"));
-    press(&mut a, Btn::X);
+    press(&mut a, Btn::B);
     assert!(read_slot_state(d.path()).recents.is_empty());
     assert_ne!(a.shelf_platform_name(), Some("Recents"));
     assert!(a.selected_stem().is_some());

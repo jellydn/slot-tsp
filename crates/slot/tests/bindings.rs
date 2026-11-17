@@ -399,13 +399,15 @@ fn in_game_buttons_are_set_from_the_main_menu_and_reach_a_game() {
         tap(&mut s, &mut now, Btn::Down);
     }
     tap(&mut s, &mut now, Btn::A);
-    tap(&mut s, &mut now, Btn::Up);
+    for _ in 0..QuickRow::ControlsInGame.position(&s.app().hidden_rows()) {
+        tap(&mut s, &mut now, Btn::Down);
+    }
     assert_eq!(s.app().quick_menu(), Some(QuickRow::ControlsInGame));
     tap(&mut s, &mut now, Btn::A);
     assert_eq!(s.app().quick_menu(), Some(QuickRow::GameUp));
     assert_eq!(
         QuickRow::GameUp.shown(&s.app().hidden_rows()),
-        QuickRow::CONTROLS
+        &QuickRow::CONTROLS[..12]
     );
     for _ in 0..QuickRow::GameA.position(&[]) {
         tap(&mut s, &mut now, Btn::Down);
@@ -436,7 +438,9 @@ fn turbo_b_moves_off_y_from_the_in_game_page() {
         tap(&mut s, &mut now, Btn::Down);
     }
     tap(&mut s, &mut now, Btn::A);
-    tap(&mut s, &mut now, Btn::Up);
+    for _ in 0..QuickRow::ControlsInGame.position(&s.app().hidden_rows()) {
+        tap(&mut s, &mut now, Btn::Down);
+    }
     tap(&mut s, &mut now, Btn::A);
     for _ in 0..QuickRow::GameTurboB.position(&[]) {
         tap(&mut s, &mut now, Btn::Down);
@@ -549,7 +553,13 @@ fn a_shelf_key_pair_switches_shelves_only_with_both_held() {
 fn a_shortcut_pair_reaches_the_gestures_as_a_pair() {
     let mut keys = ShortcutKeys::default();
     keys.set(Shortcut::SaveState, Binding::pair(Device::R1, Device::L1));
-    let table = slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default());
+    let table = slot::input::Table::new(
+        &Controls::default(),
+        &keys,
+        &CarouselKeys::default(),
+        true,
+        slot_store::Platform::Gba,
+    );
     assert!(table.entries().iter().any(|e| e.chord
         == slot_input::Chord {
             modifier: Some(slot_input::Mod::Button(Btn::L1)),
@@ -593,7 +603,13 @@ fn a_start_pair_clashes_only_with_a_single_on_start() {
     );
     keys.set(Shortcut::FastForward, Binding::plain(Device::L2));
     keys.set(Shortcut::Rewind, Binding::plain(Device::R2));
-    let table = slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default());
+    let table = slot::input::Table::new(
+        &Controls::default(),
+        &keys,
+        &CarouselKeys::default(),
+        true,
+        slot_store::Platform::Gba,
+    );
     for row in [
         QuickRow::ScPaletteBack,
         QuickRow::ScPaletteNext,
@@ -607,7 +623,13 @@ fn a_start_pair_clashes_only_with_a_single_on_start() {
         );
     }
     keys.set(Shortcut::Rewind, Binding::plain(Device::Start));
-    let table = slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default());
+    let table = slot::input::Table::new(
+        &Controls::default(),
+        &keys,
+        &CarouselKeys::default(),
+        true,
+        slot_store::Platform::Gba,
+    );
     assert!(
         table.clash(QuickRow::ScRewind).is_some(),
         "START alone does block a START pair"
@@ -619,7 +641,13 @@ fn an_unordered_pair_still_clashes_with_a_single_on_either_button() {
     let mut keys = ShortcutKeys::default();
     keys.set(Shortcut::SaveState, Binding::pair(Device::L1, Device::R1));
     keys.set(Shortcut::Rewind, Binding::plain(Device::R1));
-    let table = slot::input::Table::new(&Controls::default(), &keys, &CarouselKeys::default());
+    let table = slot::input::Table::new(
+        &Controls::default(),
+        &keys,
+        &CarouselKeys::default(),
+        true,
+        slot_store::Platform::Gba,
+    );
     assert_eq!(table.clash(QuickRow::ScSave), Some(QuickRow::ScRewind));
 }
 
@@ -700,7 +728,13 @@ fn a_shelf_key_led_by_start_needs_start_first() {
         CarouselAction::Favorite,
         Binding::pair(Device::Start, Device::A),
     );
-    let table = slot::input::Table::new(&Controls::default(), &ShortcutKeys::default(), &keys);
+    let table = slot::input::Table::new(
+        &Controls::default(),
+        &ShortcutKeys::default(),
+        &keys,
+        true,
+        slot_store::Platform::Gba,
+    );
     let shelf = || {
         let mut g = slot_input::Gestures::new();
         g.set_entries(table.entries());
@@ -881,6 +915,8 @@ fn select_x_in_game_is_the_screenshot_action() {
         &Controls::default(),
         &ShortcutKeys::default(),
         &CarouselKeys::default(),
+        true,
+        slot_store::Platform::Gba,
     );
     assert!(table.entries().iter().any(|e| e.chord
         == slot_input::Chord {

@@ -1,6 +1,7 @@
 use slot_input::{anywhere, Action, Contexts, Entry};
 use slot_store::{
-    Binding, CarouselAction, CarouselKeys, Controls, Device, KidMode, Modifier, ShortcutKeys,
+    Binding, CarouselAction, CarouselKeys, Controls, Device, GameButton, KidMode, Modifier,
+    Platform, ShortcutKeys,
 };
 use slot_ui::QuickRow;
 
@@ -19,11 +20,24 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(controls: &Controls, shortcuts: &ShortcutKeys, carousel: &CarouselKeys) -> Table {
+    pub fn new(
+        controls: &Controls,
+        shortcuts: &ShortcutKeys,
+        carousel: &CarouselKeys,
+        turbo: bool,
+        platform: Platform,
+    ) -> Table {
         let rows = QuickRow::ALL
             .into_iter()
             .filter_map(|row| {
                 if let Some(g) = row.game_button() {
+                    if !GameButton::of(platform).contains(&g) {
+                        return None;
+                    }
+                    let turbo_row = matches!(row, QuickRow::GameTurboA | QuickRow::GameTurboB);
+                    if turbo_row && !turbo {
+                        return None;
+                    }
                     return controls.game(g).map(|binding| Row {
                         row,
                         binding,
@@ -38,6 +52,14 @@ impl Table {
                         binding,
                         action: Some(action),
                         contexts: match (anywhere(action), binding.modifier) {
+                            (_, None)
+                                if platform == Platform::Ps
+                                    && GameButton::of(platform)
+                                        .iter()
+                                        .any(|g| controls.game(*g) == Some(binding)) =>
+                            {
+                                Contexts::SHELF
+                            }
                             (false, _) => Contexts::GAME,
                             (true, None) => Contexts::GAME.with(Contexts::SHELF),
                             (true, Some(_)) => Contexts::ALL,
@@ -61,25 +83,27 @@ impl Table {
         shortcuts: &ShortcutKeys,
         carousel: &CarouselKeys,
         mode: KidMode,
+        platform: Platform,
     ) -> Table {
-        let mut rows: Vec<Row> = Table::new(controls, shortcuts, carousel)
-            .rows
-            .into_iter()
-            .filter(|r| match (r.action, r.contexts == Contexts::SHELF) {
-                (None, _) => true,
-                (Some(a), true) => {
-                    mode == KidMode::Shelves
-                        && matches!(
-                            a,
-                            Action::PreviousShelf
-                                | Action::NextShelf
-                                | Action::PreviousCollection
-                                | Action::NextCollection
-                        )
-                }
-                (Some(_), false) => false,
-            })
-            .collect();
+        let mut rows: Vec<Row> =
+            Table::new(controls, shortcuts, carousel, !platform.native(), platform)
+                .rows
+                .into_iter()
+                .filter(|r| match (r.action, r.contexts == Contexts::SHELF) {
+                    (None, _) => true,
+                    (Some(a), true) => {
+                        mode == KidMode::Shelves
+                            && matches!(
+                                a,
+                                Action::PreviousShelf
+                                    | Action::NextShelf
+                                    | Action::PreviousCollection
+                                    | Action::NextCollection
+                            )
+                    }
+                    (Some(_), false) => false,
+                })
+                .collect();
         for (button, row, action) in [
             (Device::L2, QuickRow::ScBrightDown, Action::BrightnessDown),
             (Device::R2, QuickRow::ScBrightUp, Action::BrightnessUp),
@@ -106,8 +130,18 @@ impl Table {
     }
 
     pub fn entries(&self) -> Vec<Entry> {
-        self.rows
+        let delete = Binding::plain(Device::X).unwrap();
+        let x_available = !self.rows.iter().any(|r| {
+            r.contexts.meets(Contexts::SHELF)
+                && r.binding == delete
+                && r.action != Some(Action::ForgetRecent)
+        });
+        let mut entries: Vec<_> = self
+            .rows
             .iter()
+            .filter(|r| {
+                !(x_available && r.binding == delete && r.action == Some(Action::ForgetRecent))
+            })
             .filter_map(|r| {
                 r.action.map(|action| Entry {
                     chord: chord(r.binding),
@@ -115,7 +149,16 @@ impl Table {
                     contexts: r.contexts,
                 })
             })
-            .collect()
+            .collect();
+        // A user-assigned X keeps its meaning; only the old default is replaced.
+        if x_available {
+            entries.push(Entry {
+                chord: chord(delete),
+                action: Action::DeleteGame,
+                contexts: Contexts::SHELF,
+            });
+        }
+        entries
     }
 
     pub fn clash(&self, row: QuickRow) -> Option<QuickRow> {

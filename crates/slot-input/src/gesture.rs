@@ -66,6 +66,7 @@ pub enum Action {
     NextShelf,
     Favorite,
     ForgetRecent,
+    DeleteGame,
     SelectHold,
     FavoriteHold,
     ForgetRecentHold,
@@ -437,7 +438,10 @@ impl Gestures {
                 if actions.contains(&Action::Favorite) {
                     actions.retain(|a| *a != Action::Favorite);
                     self.held_tap = Some((b, Action::Favorite, now, false));
-                } else if actions.contains(&Action::ForgetRecent) {
+                } else if actions
+                    .iter()
+                    .any(|a| matches!(a, Action::ForgetRecent | Action::DeleteGame))
+                {
                     self.held_tap = Some((b, Action::ForgetRecent, now, false));
                 }
             }

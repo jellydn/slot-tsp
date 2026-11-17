@@ -254,6 +254,7 @@ pub fn run() {
         let bottom_took = bottom_began.elapsed();
         slot::latency::swapped(swap_took.as_secs_f64() * 1000.0);
         let dropped = pacer.swapped(work, swap_took > Duration::from_millis(1));
+        frontend.presented(work, swap_took, Some(dropped));
         if let Some(vblank) = surface.last_vblank() {
             if let Some(prev) = shown_at.replace(vblank) {
                 repeats +=

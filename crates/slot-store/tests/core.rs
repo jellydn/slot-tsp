@@ -227,10 +227,38 @@ fn gambatte_round_trips() {
 
 #[test]
 fn pairs_by_platform() {
-    assert_eq!(Core::pair(Platform::Gba), [Core::Mgba, Core::Gpsp]);
-    assert_eq!(Core::pair(Platform::Gbav), [Core::Mgba, Core::Gpsp]);
-    assert_eq!(Core::pair(Platform::Gb), [Core::Mgba, Core::Gambatte]);
-    assert_eq!(Core::pair(Platform::Gbc), [Core::Mgba, Core::Gambatte]);
+    assert_eq!(Core::pair(Platform::Gba), Some([Core::Mgba, Core::Gpsp]));
+    assert_eq!(Core::pair(Platform::Gbav), Some([Core::Mgba, Core::Gpsp]));
+    assert_eq!(Core::pair(Platform::Gb), Some([Core::Mgba, Core::Gambatte]));
+    assert_eq!(
+        Core::pair(Platform::Gbc),
+        Some([Core::Mgba, Core::Gambatte])
+    );
+    assert_eq!(
+        Core::pair(Platform::Ps),
+        Some([Core::PcsxRearmed, Core::SwanStation])
+    );
+    assert_eq!(Core::pair(Platform::Pico8), None);
+}
+
+#[test]
+fn native_platforms_select_only_their_own_core_even_with_a_stale_gb_override() {
+    let d = root_with(Some("Demo=mgba\n"));
+    for (platform, expected) in [
+        (Platform::Ps, Core::PcsxRearmed),
+        (Platform::Pico8, Core::Fake08),
+    ] {
+        assert_eq!(
+            core_for_platform(d.path(), "Demo", platform, Core::Gambatte),
+            expected
+        );
+        for core in Core::ALL {
+            assert_eq!(
+                core.runs(platform),
+                core == expected || (platform == Platform::Ps && core == Core::SwanStation)
+            );
+        }
+    }
 }
 
 #[test]
@@ -254,6 +282,23 @@ fn a_line_naming_a_core_the_platform_cannot_run_is_dropped() {
     assert_eq!(
         core_for_platform(d.path(), "Tetris", Platform::Gbc, Core::Mgba),
         Core::Mgba
+    );
+}
+
+#[test]
+fn the_core_list_preserves_existing_indices_and_includes_native_cores() {
+    assert_eq!(
+        Core::ALL,
+        [
+            Core::Mgba,
+            Core::Gpsp,
+            Core::Gambatte,
+            Core::PcsxRearmed,
+            Core::Fake08,
+            Core::SwanStation,
+            #[cfg(feature = "nds")]
+            Core::Dsperate,
+        ]
     );
 }
 
@@ -300,12 +345,6 @@ fn writing_a_core_moves_a_line_without_a_system_onto_one_with() {
     write_selected_core(d.path(), Platform::Gba, "Emerald", Core::Gpsp).unwrap();
     let text = std::fs::read_to_string(d.path().join("Config/selected_core.txt")).unwrap();
     assert_eq!(text, "GBA/Emerald = gpsp\n");
-}
-
-#[cfg(not(feature = "nds"))]
-#[test]
-fn the_core_list_has_three_entries() {
-    assert_eq!(Core::ALL.len(), 3);
 }
 
 #[cfg(feature = "nds")]

@@ -7,20 +7,22 @@ pub enum Platform {
     Gb,
     Gbc,
     Gbav,
+    Ps,
+    Pico8,
     #[cfg(feature = "nds")]
     Nds,
 }
 
 impl Platform {
-    #[cfg(not(feature = "nds"))]
-    pub const ALL: [Platform; 4] = [Platform::Gba, Platform::Gbav, Platform::Gbc, Platform::Gb];
-    #[cfg(feature = "nds")]
-    pub const ALL: [Platform; 5] = [
+    pub const ALL: [Platform; 6 + cfg!(feature = "nds") as usize] = [
+        #[cfg(feature = "nds")]
         Platform::Nds,
         Platform::Gba,
         Platform::Gbav,
         Platform::Gbc,
         Platform::Gb,
+        Platform::Ps,
+        Platform::Pico8,
     ];
 
     pub fn name(self) -> &'static str {
@@ -29,6 +31,8 @@ impl Platform {
             Platform::Gb => "Game Boy",
             Platform::Gbc => "Game Boy Color",
             Platform::Gbav => "Game Boy Advance Video",
+            Platform::Ps => "PlayStation",
+            Platform::Pico8 => "PICO-8",
             #[cfg(feature = "nds")]
             Platform::Nds => "Nintendo DS",
         }
@@ -40,9 +44,25 @@ impl Platform {
             Platform::Gb => "GB",
             Platform::Gbc => "GBC",
             Platform::Gbav => "GBAV",
+            Platform::Ps => "PS",
+            Platform::Pico8 => "PICO8",
             #[cfg(feature = "nds")]
             Platform::Nds => "NDS",
         }
+    }
+
+    pub fn native(self) -> bool {
+        matches!(self, Platform::Ps | Platform::Pico8)
+    }
+
+    /// Native formats can share a title; keep their complete filenames as identities.
+    pub fn stem(self, path: &Path) -> Option<&str> {
+        if self.native() {
+            path.file_name()
+        } else {
+            path.file_stem()
+        }
+        .and_then(|s| s.to_str())
     }
 
     pub fn hardware(self) -> Platform {
@@ -56,6 +76,8 @@ impl Platform {
         match self {
             Platform::Gba | Platform::Gbav => &["gba"],
             Platform::Gb | Platform::Gbc => &["gb", "gbc"],
+            Platform::Ps => &["cue", "chd", "pbp", "m3u"],
+            Platform::Pico8 => &["p8", "p8.png"],
             #[cfg(feature = "nds")]
             Platform::Nds => &["nds"],
         }
@@ -65,18 +87,22 @@ impl Platform {
         match self {
             Platform::Gba | Platform::Gbav => (240, 160),
             Platform::Gb | Platform::Gbc => (160, 144),
+            Platform::Ps => (320, 240),
+            Platform::Pico8 => (128, 128),
             #[cfg(feature = "nds")]
             Platform::Nds => (256, 192),
         }
     }
 
     pub fn accepts(self, path: &Path) -> bool {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|ext| {
-                self.extensions()
-                    .iter()
-                    .any(|k| ext.eq_ignore_ascii_case(k))
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                let name = name.to_ascii_lowercase();
+                self.extensions().iter().any(|ext| {
+                    name.strip_suffix(ext)
+                        .is_some_and(|prefix| prefix.ends_with('.'))
+                })
             })
     }
 }

@@ -84,6 +84,10 @@ pub struct Frontend {
     wallpaper: WallpaperSync,
     picking_faces: PickingSync,
     game_bezel: BezelSync,
+    performance: PerformanceHud,
+    input_test_view: crate::input::test_screen::InputTestView,
+    removal_shown: Option<(u32, Vec<String>)>,
+    removal_textures: Vec<Option<TexId>>,
     overlay: OverlaySync,
     look: Option<ShelfLook>,
     link_shot: Option<TexId>,
@@ -107,6 +111,17 @@ struct QuickClock {
 }
 
 #[derive(Default)]
+struct PerformanceHud {
+    active: bool,
+    since: Option<(Instant, crate::performance::Totals)>,
+    total: crate::performance::Totals,
+    fresh: bool,
+    lines: Vec<String>,
+    faces: Vec<(TexId, u32, u32)>,
+    dirty: bool,
+}
+
+#[derive(Default)]
 struct InviteSync {
     statics: Option<[Sprite; 3]>,
     one: Option<TexId>,
@@ -127,8 +142,8 @@ type BezelImage = (Console, BezelPick, Option<BezelArt>, (u32, u32));
 struct BezelSync {
     tex: Option<TexId>,
     image: Option<BezelImage>,
-    labels: [String; 3],
-    faces: [(Option<TexId>, Option<TexId>); 3],
+    labels: [String; 5],
+    faces: [(Option<TexId>, Option<TexId>); 5],
 }
 
 #[derive(Default)]
@@ -387,7 +402,7 @@ fn sync_fetch_art(app: &mut App, compositor: &mut Compositor, st: &mut FetchSync
         let paper = compositor.create_texture(1, 1, &[0xf6, 0xf4, 0xef, 255]);
         app.set_fetch_paper(paper);
     }
-    if !st.examples_asked && app.wifi_configured() {
+    if !st.examples_asked && (app.wifi_configured() || app.fetch_art().is_some()) {
         st.examples_asked = true;
         st.faces.ask(FaceJob::Examples);
     }
@@ -635,6 +650,9 @@ impl Frontend {
         crate::boot_time::mark("session");
         let stale_check =
             Self::check_labels(platform.root(), session.app().carts().cloned().collect());
+        if cfg!(feature = "stock-tg5040") {
+            session.app_mut().set_stock_controls_owned();
+        }
         session
             .app_mut()
             .set_power(Power::new(platform, DOZE_TIMEOUT));
@@ -686,6 +704,10 @@ impl Frontend {
             wallpaper: WallpaperSync::default(),
             picking_faces: PickingSync::default(),
             game_bezel: BezelSync::default(),
+            performance: PerformanceHud::default(),
+            input_test_view: crate::input::test_screen::InputTestView::default(),
+            removal_shown: None,
+            removal_textures: Vec::new(),
             overlay: OverlaySync::default(),
             look: None,
             grounds: None,
@@ -1242,6 +1264,7 @@ impl Frontend {
     }
 
     pub fn compose(&mut self, compositor: &mut Compositor) {
+        self.sync_performance(compositor);
         if self.prepare(compositor) {
             self.draw_screen_list(compositor, Screen::Top);
         }
@@ -1253,6 +1276,39 @@ impl Frontend {
         if screen == Screen::Top || self.draws.iter().any(|d| matches!(d, Draw::Game)) {
             self.ds
                 .swap_game(&mut self.draws, &self.session, compositor, screen);
+        }
+        if screen == Screen::Top && self.performance.active {
+            let width = self
+                .performance
+                .faces
+                .iter()
+                .take(self.performance.lines.len())
+                .map(|(_, w, _)| *w)
+                .max()
+                .unwrap_or(0) as f32;
+            self.draws.push(Draw::Rect {
+                x: 8.0,
+                y: 8.0,
+                w: width + 16.0,
+                h: 6.0 * 20.0 + 8.0,
+                colour: [0.0, 0.0, 0.0, 0.85],
+            });
+            for (i, &(tex, w, h)) in self
+                .performance
+                .faces
+                .iter()
+                .take(self.performance.lines.len())
+                .enumerate()
+            {
+                self.draws.push(Draw::Tex {
+                    tex,
+                    x: 16.0,
+                    y: 12.0 + i as f32 * 20.0,
+                    w: w as f32,
+                    h: h as f32,
+                    alpha: 1.0,
+                });
+            }
         }
         compositor.draw_list(&self.draws);
         if screen == Screen::Top {
@@ -1289,6 +1345,11 @@ impl Frontend {
         if self.draw_rebuild(compositor) {
             return false;
         }
+        if let Some(test) = self.session.app().input_test() {
+            self.input_test_view
+                .draw(test, compositor, self.session.app().canvas().w);
+            return false;
+        }
         if let Some([r, g, b]) = self.session.app().blank_panel() {
             self.picture_is(Picture::Blank, compositor);
             let px = (slot_gfx::SRC_W * slot_gfx::SRC_H) as usize;
@@ -1299,7 +1360,15 @@ impl Frontend {
         {
             let launch = self.session.launches();
             self.picture_is(Picture::Game(launch, frame.cut()), compositor);
-            compositor.upload_game(&frame);
+            let g = frame.geometry;
+            if g == slot_retro::FrameGeometry::default() {
+                compositor.upload_game(&frame);
+                self.performance.fresh = true;
+            } else if !compositor.upload_native_game(&frame, (g.width, g.height), g.aspect) {
+                eprintln!("slot: unsupported game frame {}×{}", g.width, g.height);
+            } else {
+                self.performance.fresh = true;
+            }
             crate::latency::taken();
         }
         self.cart_faces.sync(self.session.app_mut(), compositor);
@@ -1342,11 +1411,78 @@ impl Frontend {
         sync_quick_nickname(self.session.app_mut(), compositor, &mut self.quick_nickname);
         sync_invite(self.session.app_mut(), compositor, &mut self.invite);
         self.networks.sync(self.session.app_mut(), compositor);
+        let removal = self
+            .session
+            .app()
+            .game_removal_lines()
+            .map(|lines| ((self.session.app().canvas().w - 60.0) as u32, lines));
+        if removal != self.removal_shown {
+            if let (Some((w, lines)), Some(font)) = (&removal, slot_ui::text::label_font()) {
+                let w = *w;
+                let mut faces = Vec::new();
+                for px in (12..=20).rev() {
+                    let px = px as f32;
+                    let line_h = font
+                        .horizontal_line_metrics(px)
+                        .map_or(px, |metrics| metrics.new_line_size);
+                    let layouts: Vec<_> = lines
+                        .iter()
+                        .map(|line| {
+                            let layout = slot_ui::text::fit(font, line, w as f32, 32, px, px);
+                            let h = (layout.lines.len() as f32 * line_h).ceil() as u32 + 4;
+                            (layout, h)
+                        })
+                        .collect();
+                    let h = layouts.iter().map(|(_, h)| h).sum::<u32>()
+                        + 12 * layouts.len().saturating_sub(1) as u32;
+                    // Keep the entire filename and warning above the button legends.
+                    if h > OUT_H - 2 * slot_ui::MOUTH_H as u32 - 40 && px > 12.0 {
+                        continue;
+                    }
+                    let mut rgba = vec![0; (w * h * 4) as usize];
+                    let mut y = 0;
+                    for (layout, line_h) in layouts {
+                        let start = (y * w * 4) as usize;
+                        let end = ((y + line_h) * w * 4) as usize;
+                        slot_ui::text::draw_centred(
+                            &mut rgba[start..end],
+                            w,
+                            line_h,
+                            &layout,
+                            [240; 3],
+                        );
+                        y += line_h + 12;
+                    }
+                    faces.push(UndoFace { rgba, w, h });
+                    break;
+                }
+                let [back, choose] = prompt_legends(footer_ink(false), "Cancel", "Choose");
+                faces.extend([back, choose]);
+                self.removal_textures.resize(faces.len(), None);
+                let uploaded = faces
+                    .iter()
+                    .zip(&mut self.removal_textures)
+                    .map(|(face, tex)| {
+                        (
+                            upload_rgba(compositor, tex, face.w, face.h, &face.rgba),
+                            face.w,
+                            face.h,
+                        )
+                    })
+                    .collect();
+                self.session.app_mut().set_game_removal_faces(uploaded);
+            }
+            self.removal_shown = removal;
+        }
         sync_quick_palette(self.session.app_mut(), compositor, &mut self.quick_palette);
         sync_wallpaper(self.session.app_mut(), compositor, &mut self.wallpaper);
         sync_picking(self.session.app_mut(), compositor, &mut self.picking_faces);
         sync_game_bezel(self.session.app_mut(), compositor, &mut self.game_bezel);
-        compositor.set_game_bezel(self.session.app().shown_game_bezel());
+        compositor.set_game_bezel(
+            self.session.app().shown_game_bezel(),
+            self.session.app().playing_platform().hardware() == Console::Gba
+                && slot_gfx::wide(self.session.app().game_bezel_size()),
+        );
         sync_overlay(
             self.session.app_mut(),
             compositor,
@@ -1517,13 +1653,93 @@ impl Frontend {
         true
     }
 
+    fn sync_performance(&mut self, compositor: &mut Compositor) {
+        let active = self.session.app().performance()
+            && matches!(self.session.app().phase(), Phase::Playing { .. })
+            && self.session.app().in_game_menu().is_none()
+            && self.session.observed_speed() == Some(crate::emu::Speed::Normal);
+        if let Some(emu) = self.session.emu() {
+            emu.set_performance(active);
+        }
+        let hud = &mut self.performance;
+        if active != hud.active {
+            hud.active = active;
+            hud.since = None;
+            hud.total = Default::default();
+            hud.fresh = false;
+            hud.lines = vec!["Performance: measuring (1 s window)".into()];
+            hud.dirty = true;
+        }
+        if hud.dirty {
+            if active {
+                for (i, line) in hud.lines.iter().enumerate() {
+                    let face = word_ink(line, [245, 242, 239]);
+                    if let Some((tex, w, h)) = hud.faces.get_mut(i) {
+                        compositor.update_texture(*tex, face.w, face.h, &face.rgba);
+                        *w = face.w;
+                        *h = face.h;
+                    } else {
+                        hud.faces.push((
+                            compositor.create_texture(face.w, face.h, &face.rgba),
+                            face.w,
+                            face.h,
+                        ));
+                    }
+                }
+            }
+            hud.dirty = false;
+        }
+    }
+
+    /// Called only after a successful swap; uploads are not counted as displayed frames.
+    pub fn presented(&mut self, work: Duration, swap: Duration, missed: Option<bool>) {
+        let hud = &mut self.performance;
+        if !hud.active {
+            return;
+        }
+        let Some(emu) = self.session.emu() else {
+            return;
+        };
+        let worker = emu.performance();
+        hud.total.steps = worker.steps;
+        hud.total.core_ns = worker.core_ns;
+        hud.total.rewind_ns = worker.rewind_ns;
+        hud.total.copy_ns = worker.copy_ns;
+        hud.total.audio_ns = worker.audio_ns;
+        hud.total.swaps += 1;
+        hud.total.fresh += u64::from(std::mem::take(&mut hud.fresh));
+        hud.total.late_available = missed.is_some();
+        hud.total.missed += u64::from(missed == Some(true));
+        hud.total.work_ns += work.as_nanos() as u64;
+        hud.total.swap_ns += swap.as_nanos() as u64;
+        let ring = self.session.audio_ring();
+        hud.total.starved = ring.underruns();
+        hud.total.dropped = ring.overruns();
+        let now = Instant::now();
+        let (since, before) = *hud.since.get_or_insert((now, hud.total));
+        let elapsed = now.duration_since(since);
+        if elapsed >= Duration::from_secs(1) {
+            hud.lines = crate::performance::lines(before, hud.total, elapsed).into();
+            eprintln!("slot: perf: {}", hud.lines.join("; "));
+            hud.since = Some((now, hud.total));
+            hud.dirty = true;
+        }
+    }
+
     pub fn advance(&mut self, input: &mut dyn InputSource) {
         let now = self.now();
+        input.set_monitoring(self.session.app().input_test().is_some());
         let events = input.poll(now);
         if self.rebuild.as_ref().is_some_and(Rebuild::on_screen) {
             return;
         }
         self.session.feed(events, now);
+        if let Some(test) = &mut self.session.app_mut().input_test {
+            test.observe(input.physical_available(), input.take_physical_events());
+            test.analog_available = input.analog_available();
+        }
+        input.set_monitoring(self.session.app().input_test().is_some());
+        self.session.set_analog(input.analog_sticks());
         let dt = self.last.elapsed().as_secs_f32();
         self.last = Instant::now();
         self.session.update(dt);
@@ -1594,8 +1810,15 @@ impl Frontend {
     }
 
     pub fn advance_at(&mut self, input: &mut dyn InputSource, now: Millis, dt: f32) {
+        input.set_monitoring(self.session.app().input_test().is_some());
         let events = input.poll(now);
         self.session.feed(events, now);
+        if let Some(test) = &mut self.session.app_mut().input_test {
+            test.observe(input.physical_available(), input.take_physical_events());
+            test.analog_available = input.analog_available();
+        }
+        input.set_monitoring(self.session.app().input_test().is_some());
+        self.session.set_analog(input.analog_sticks());
         self.session.update(dt);
     }
 
@@ -2185,6 +2408,9 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
     if state.image.as_ref() != Some(&shown) {
         let rgba = match &shown.1 {
             BezelPick::None | BezelPick::Ags102 => None,
+            BezelPick::Default if platform.native() || platform.hardware() == Console::Gba => {
+                Some(slot_ui::native_bezel_face(platform, w, h))
+            }
             BezelPick::Default => shown
                 .2
                 .and_then(|kind| default_game_bezel_face(platform == Console::Gbc, kind, w, h)),
@@ -2195,7 +2421,13 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
                         .join(platform.dir_name())
                         .join(name)
                 })
-                .and_then(|path| game_bezel_face(&path, w, h)),
+                .and_then(|path| {
+                    if platform.native() {
+                        bezel_face(&path, w, h)
+                    } else {
+                        game_bezel_face(&path, w, h)
+                    }
+                }),
         };
         app.set_bezel_column(
             rgba.as_deref()
@@ -2219,9 +2451,15 @@ fn sync_game_bezel(app: &mut App, compositor: &mut Compositor, state: &mut Bezel
     if app.quick_menu().is_none() && app.in_game_menu().is_none() {
         return;
     }
-    for (at, platform) in [Console::Gba, Console::Gb, Console::Gbc]
-        .into_iter()
-        .enumerate()
+    for (at, platform) in [
+        Console::Gba,
+        Console::Gb,
+        Console::Gbc,
+        Console::Ps,
+        Console::Pico8,
+    ]
+    .into_iter()
+    .enumerate()
     {
         let label = app.resolved_bezel(platform).label();
         if state.labels[at] == label {
@@ -3006,6 +3244,10 @@ fn upload_rgba(
         }
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "frontend_ps1_analog_tests.rs"]
+mod ps1_analog_tests;
 
 #[cfg(test)]
 mod tests {

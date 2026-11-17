@@ -42,7 +42,7 @@ fn the_link_ending_says_who_ended_it() {
 fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     let all = Toast::all();
     assert_eq!(
-        all[..34],
+        all[..37],
         [
             Toast::StateSaved,
             Toast::StateLoaded,
@@ -72,6 +72,9 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
             Toast::Forgotten,
             Toast::RestartFailed,
             Toast::PoweroffFailed,
+            Toast::CoreUnavailable,
+            Toast::GameFailed,
+            Toast::DiscFailed,
             Toast::Collection,
             Toast::KidUnlocked,
             Toast::TintOff,
@@ -84,12 +87,12 @@ fn the_banner_says_what_happened_and_never_what_is_on_screen() {
     let palettes = GbColors::all().count();
     assert_eq!(palettes, 49);
     assert_eq!(
-        all[34..34 + palettes],
+        all[37..37 + palettes],
         GbColors::all().map(Toast::Palette).collect::<Vec<_>>()[..],
         "the palette banners do not follow the fixed ones in palette order"
     );
     assert_eq!(
-        all[34 + palettes..],
+        all[37 + palettes..],
         QuickRow::ALL
             .into_iter()
             .filter(|r| r.binds())
@@ -130,8 +133,9 @@ fn no_toast_is_shrunk_to_fit_its_box() {
     let (top, bottom) = rows(Toast::StateSaved);
     for t in Toast::all().into_iter().filter(|t| !t.alarm()) {
         let (a, b) = rows(t);
+        let extra = toast_face(t).h - toast_face(Toast::StateSaved).h;
         assert!(
-            a.abs_diff(top) <= 1 && b.abs_diff(bottom) <= 1,
+            a.abs_diff(top) <= 1 && b.abs_diff(bottom + extra as usize) <= 1,
             "{t:?} sits on rows {a}..{b} where the others sit on {top}..{bottom}, so it was shrunk to fit"
         );
     }

@@ -1519,7 +1519,7 @@ fn the_bezel_draws_over_the_overlay() {
     };
     let blue: Vec<u8> = (0..640 * 480).flat_map(|_| [0u8, 0, 255, 255]).collect();
     let bezel = c.create_texture(640, 480, &blue);
-    c.set_game_bezel(Some(bezel));
+    c.set_game_bezel(Some(bezel), false);
     let f = gb_at_3x(&mut c, |c| Some(full_overlay(c, [255, 0, 0, 255])));
     assert_eq!(at(&f, 640, 320, 240), [0, 0, 255]);
 }
@@ -1554,7 +1554,7 @@ fn a_still_after_the_game_does_not_lay_the_full_overlay_over_the_bezel() {
         }
     }
     let bezel = c.create_texture(640, 480, &bezel);
-    c.set_game_bezel(Some(bezel));
+    c.set_game_bezel(Some(bezel), false);
     let game = gb_at_3x(&mut c, |c| Some(full_overlay(c, [255, 0, 0, 128])));
     let still = c.create_texture_nearest(SRC_W, SRC_H, &vec![255u8; (SRC_W * SRC_H * 4) as usize]);
     c.begin_frame();

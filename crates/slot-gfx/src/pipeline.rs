@@ -15,6 +15,8 @@ const FULL: [f32; 4] = [0.0, 0.0, OUT_W as f32, OUT_H as f32];
 
 pub struct GamePass {
     prog: gl::types::GLuint,
+    size: (u32, u32),
+    aspect: Option<f32>,
     game: [gl::types::GLuint; 2],
     at: usize,
     held: usize,
@@ -84,6 +86,8 @@ impl GamePass {
         Ok(GamePass {
             prog,
             game,
+            size: (SRC_W, SRC_H),
+            aspect: None,
             at: 0,
             held: 0,
             blend: FrameBlend::Off,
@@ -125,6 +129,10 @@ impl GamePass {
             true => (0.0, 0.0, OUT_W as f32, OUT_H as f32 - foot),
             false => screen_rect_above(crate::Canvas::FRAMED, self.power, foot),
         }
+    }
+
+    pub fn native_video(&self) -> bool {
+        self.aspect.is_some()
     }
 
     pub fn set_layout(&mut self, rect: [f32; 4]) {
@@ -225,8 +233,59 @@ impl GamePass {
     }
 
     pub fn upload(&mut self, xrgb8888: &[u8], quad: &Quad) {
-        if xrgb8888.len() < (SRC_W * SRC_H * 4) as usize {
-            return;
+        self.upload_frame(xrgb8888, (SRC_W, SRC_H), None, quad);
+    }
+
+    pub fn upload_native(
+        &mut self,
+        xrgb8888: &[u8],
+        size: (u32, u32),
+        aspect: f32,
+        quad: &Quad,
+    ) -> bool {
+        if !aspect.is_finite() || aspect <= 0.0 {
+            return false;
+        }
+        self.upload_frame(xrgb8888, size, Some(aspect), quad)
+    }
+
+    fn upload_frame(
+        &mut self,
+        xrgb8888: &[u8],
+        size: (u32, u32),
+        aspect: Option<f32>,
+        quad: &Quad,
+    ) -> bool {
+        let (w, h) = size;
+        if !(1..=2048).contains(&w)
+            || !(1..=2048).contains(&h)
+            || xrgb8888.len() < (w * h * 4) as usize
+        {
+            return false;
+        }
+        if self.size != size {
+            let mut max_size = 0;
+            unsafe { gl::GetIntegerv(gl::MAX_TEXTURE_SIZE, &mut max_size) };
+            if w as i32 > max_size || h as i32 > max_size {
+                return false;
+            }
+            self.cut();
+            for texture in self.game {
+                unsafe {
+                    gl::BindTexture(gl::TEXTURE_2D, texture);
+                    gl::TexImage2D(
+                        gl::TEXTURE_2D,
+                        0,
+                        crate::gl::internal_format(gl::BGRA),
+                        w as i32,
+                        h as i32,
+                        0,
+                        gl::BGRA,
+                        gl::UNSIGNED_BYTE,
+                        std::ptr::null(),
+                    );
+                }
+            }
         }
         let last = self.game[self.at];
         self.at = 1 - self.at;
@@ -235,16 +294,17 @@ impl GamePass {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, game);
             gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+            let pixels = xrgb8888.as_ptr() as *const std::ffi::c_void;
             gl::TexSubImage2D(
                 gl::TEXTURE_2D,
                 0,
                 0,
                 0,
-                SRC_W as i32,
-                SRC_H as i32,
+                w as i32,
+                h as i32,
                 gl::BGRA,
                 gl::UNSIGNED_BYTE,
-                xrgb8888.as_ptr() as *const std::ffi::c_void,
+                pixels,
             );
         }
         match self.blend {
@@ -252,11 +312,15 @@ impl GamePass {
             FrameBlend::Mix => self.ghost.mix(game, last, quad),
             FrameBlend::Ghosting => self.ghost.respond(game, self.lcd.response(), quad),
         }
+        self.size = size;
+        self.aspect = aspect;
+        true
     }
 
     pub fn draw(&self, quad: &Quad) {
-        let src = match self.effect {
-            ScreenEffect::Grid if self.layout == FULL => {
+        let src = match (self.aspect, self.effect) {
+            (Some(_), _) => WHOLE_TEXTURE,
+            (_, ScreenEffect::Grid) if self.layout == FULL => {
                 whole_scale_source(self.src, self.fbo_scale)
             }
             _ => self.src,
@@ -270,11 +334,25 @@ impl GamePass {
     }
 
     pub fn draw_still(&self, tex: gl::types::GLuint, quad: &Quad) {
-        self.draw_source(tex, quad, self.src, self.layout);
+        let src = if self.aspect.is_some() {
+            WHOLE_TEXTURE
+        } else {
+            self.src
+        };
+        self.draw_source(tex, quad, src, self.layout);
     }
 
     fn draw_source(&self, tex: gl::types::GLuint, quad: &Quad, src: [f32; 4], layout: [f32; 4]) {
-        let (x, y, w, h) = placed_in(self.frame(), layout);
+        let (mut x, mut y, mut w, mut h) = placed_in(self.frame(), layout);
+        if let Some(aspect) = self.aspect {
+            // Layout coordinates are stretched independently to the framebuffer.
+            let aspect = aspect * self.fbo_scale[1] / self.fbo_scale[0];
+            let fw = w.min(h * aspect);
+            let fh = h.min(w / aspect);
+            x += (w - fw) / 2.0;
+            y += (h - fh) / 2.0;
+            (w, h) = (fw, fh);
+        }
         let bright = if self.fills {
             1.0
         } else {
@@ -283,11 +361,21 @@ impl GamePass {
         // The footer covers the bottom of a full-frame picture. Keep the part that sat above
         // it, so opening the scale does not squash the picture into the shorter rect.
         let mut src = src;
-        if self.bottom > 0.0 {
+        if self.bottom > 0.0 && self.aspect.is_none() {
             src[3] *= (OUT_H as f32 - self.bottom) / OUT_H as f32;
         }
+        let pic = if self.aspect.is_some() {
+            WHOLE_TEXTURE
+        } else {
+            self.pic
+        };
         unsafe {
             gl::UseProgram(self.prog);
+            gl::Uniform2f(
+                crate::gl::uniform_location(self.prog, "u_src"),
+                self.size.0 as f32,
+                self.size.1 as f32,
+            );
             gl::Uniform4f(self.u_rect, x, y, w, h);
             gl::Uniform4f(self.u_uv, src[0], src[1], src[2], src[3]);
             gl::Uniform1f(self.u_bright, bright);
@@ -295,13 +383,7 @@ impl GamePass {
             gl::Uniform1f(self.u_paper_size, self.paper_size);
             gl::Uniform2f(self.u_fbo, self.fbo_scale[0], self.fbo_scale[1]);
             gl::Uniform2f(self.u_origin, self.origin[0], self.origin[1]);
-            gl::Uniform4f(
-                self.u_pic,
-                self.pic[0],
-                self.pic[1],
-                self.pic[2],
-                self.pic[3],
-            );
+            gl::Uniform4f(self.u_pic, pic[0], pic[1], pic[2], pic[3]);
             gl::ActiveTexture(gl::TEXTURE1);
             gl::BindTexture(gl::TEXTURE_2D, self.paper);
             gl::ActiveTexture(gl::TEXTURE0);

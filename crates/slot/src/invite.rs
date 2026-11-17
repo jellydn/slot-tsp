@@ -41,6 +41,7 @@ fn core_byte(core: Core) -> u8 {
         Core::Mgba => 1,
         Core::Gpsp => 2,
         Core::Gambatte => 3,
+        Core::PcsxRearmed | Core::SwanStation | Core::Fake08 => 0,
         #[cfg(feature = "nds")]
         Core::Dsperate => 0,
     }
@@ -60,6 +61,7 @@ fn platform_byte(platform: Platform) -> u8 {
         Platform::Gb => 1,
         Platform::Gbc => 2,
         Platform::Gba | Platform::Gbav => 3,
+        Platform::Ps | Platform::Pico8 => 0,
         #[cfg(feature = "nds")]
         Platform::Nds => 0,
     }
