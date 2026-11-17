@@ -5,7 +5,8 @@ use slot_gfx::{Canvas, Draw, TexId, OUT_H, OUT_W};
 
 use crate::art;
 
-const DEFAULT_PNG: &[u8] = include_bytes!("../../../assets/background_default.png");
+pub const SLOT_WALLPAPER_PNG: &[u8] = include_bytes!("../../../assets/background_default.png");
+const DEFAULT_PNG: &[u8] = SLOT_WALLPAPER_PNG;
 const BEZEL_GB_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb.png");
 const BEZEL_GBC_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc.png");
 const BEZEL_GB_FIT_3X2_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_fit_3x2.png");
@@ -15,7 +16,9 @@ const BEZEL_GBC_INTEGER_4X3_PNG: &[u8] =
     include_bytes!("../../../assets/bezel_gbc_integer_4x3.png");
 const BEZEL_GB_FIT_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gb_fit_4x3.png");
 const BEZEL_GBC_FIT_4X3_PNG: &[u8] = include_bytes!("../../../assets/bezel_gbc_fit_4x3.png");
-const BLUR_PNG: &[u8] = include_bytes!("../../../assets/background_default_blur.png");
+pub const SLOT_BLUR_WALLPAPER_PNG: &[u8] =
+    include_bytes!("../../../assets/background_default_blur.png");
+const BLUR_PNG: &[u8] = SLOT_BLUR_WALLPAPER_PNG;
 
 const SCRIM: f32 = 0.62;
 
@@ -108,6 +111,18 @@ pub fn blur_background() -> Option<&'static [u8]> {
         .as_deref()
 }
 
+pub fn reference_ground_covers((w, h): (u32, u32)) -> bool {
+    h == OUT_H && w <= OUT_W
+}
+
+pub fn default_background_at(w: u32, h: u32) -> Option<Vec<u8>> {
+    art::cover_bytes(DEFAULT_PNG, w, h)
+}
+
+pub fn blur_background_at(w: u32, h: u32) -> Option<Vec<u8>> {
+    art::cover_bytes(BLUR_PNG, w, h)
+}
+
 pub fn draw_ground(canvas: Canvas, face: Option<(TexId, u32)>, out: &mut Vec<Draw>) {
     let Some(face) = face else {
         return;
@@ -124,7 +139,7 @@ pub fn draw_backdrop(canvas: Canvas, face: Option<(TexId, u32)>, out: &mut Vec<D
         x: 0.0,
         y: 0.0,
         w: canvas.w,
-        h: OUT_H as f32,
+        h: canvas.h,
         colour: [0.0, 0.0, 0.0, SCRIM],
     });
 }
@@ -134,7 +149,7 @@ fn ground(canvas: Canvas, (tex, tex_w): (TexId, u32)) -> Draw {
         x: 0.0,
         y: 0.0,
         w: canvas.w,
-        h: OUT_H as f32,
+        h: canvas.h,
         tex,
         alpha: 1.0,
         uv: canvas.cover(tex_w as f32),

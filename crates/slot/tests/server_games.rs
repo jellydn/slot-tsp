@@ -549,7 +549,11 @@ fn art_upload_over_a_label_learned_at_boot_shows_the_new_label() {
     let (d, server) = start();
     let root = d.path();
     put(root, "Games/GBA/Gamma.gba", b"gamma-rom");
-    put(root, "Labels/GBA/Gamma.png", &solid_png(640, 330, [200, 10, 10]));
+    put(
+        root,
+        "Labels/GBA/Gamma.png",
+        &solid_png(640, 330, [200, 10, 10]),
+    );
     slot::label_cache::learn_stamps(root);
     let cart = slot_store::Cart {
         platform: Platform::Gba,
@@ -559,11 +563,23 @@ fn art_upload_over_a_label_learned_at_boot_shows_the_new_label() {
         title: String::new(),
         code: String::new(),
         shell: None,
+        tags: Vec::new(),
     };
-    assert_eq!(&slot::label_cache::label_art(root, &cart).unwrap()[..3], &[200, 10, 10]);
-    let (status, _) = call(server.port(), "POST", "/api/games/GBA/0/art?name=new.png", &solid_png(640, 330, [10, 10, 200]));
+    assert_eq!(
+        &slot::label_cache::label_art(root, &cart).unwrap()[..3],
+        &[200, 10, 10]
+    );
+    let (status, _) = call(
+        server.port(),
+        "POST",
+        "/api/games/GBA/0/art?name=new.png",
+        &solid_png(640, 330, [10, 10, 200]),
+    );
     assert_eq!(status, 200);
-    assert_eq!(&slot::label_cache::label_art(root, &cart).unwrap()[..3], &[10, 10, 200]);
+    assert_eq!(
+        &slot::label_cache::label_art(root, &cart).unwrap()[..3],
+        &[10, 10, 200]
+    );
     server.stop();
 }
 
@@ -642,4 +658,82 @@ fn a_gba_game_lists_mgba_and_gpsp_only() {
         resume_names(Platform::Gba, "GBA", "Alpha.gba"),
         serde_json::json!(["mGBA", "gpSP"])
     );
+}
+
+fn collections(root: &Path) {
+    put(root, "Collections/Puzzlers.txt", b"gba/Alpha\ngb/Beta\n");
+    put(root, "Collections/Other.txt", b"gb/Beta\n");
+    put(root, "Collections/order.txt", b"Puzzlers\nOther\n");
+}
+
+#[test]
+fn rename_carries_collections() {
+    let (d, server) = start();
+    library(d.path());
+    collections(d.path());
+    let other = d.path().join("Collections/Other.txt");
+    let stamp = std::fs::metadata(&other).unwrap().modified().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let (status, body) = call(
+        server.port(),
+        "POST",
+        "/api/games/GBA/0/rename?name=Gamma.gba",
+        b"",
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        read(d.path(), "Collections/Puzzlers.txt"),
+        "gba/Gamma\ngb/Beta\n"
+    );
+    assert_eq!(
+        std::fs::metadata(&other).unwrap().modified().unwrap(),
+        stamp
+    );
+    server.stop();
+}
+
+#[test]
+fn rename_onto_a_game_already_collected_keeps_one() {
+    let (d, server) = start();
+    library(d.path());
+    put(
+        d.path(),
+        "Collections/Puzzlers.txt",
+        b"gba/Alpha\ngba/Gamma\n",
+    );
+    let (status, body) = call(
+        server.port(),
+        "POST",
+        "/api/games/GBA/0/rename?name=Gamma.gba",
+        b"",
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(read(d.path(), "Collections/Puzzlers.txt"), "gba/Gamma\n");
+    server.stop();
+}
+
+#[test]
+fn purge_removes_from_collections() {
+    let (d, server) = start();
+    library(d.path());
+    collections(d.path());
+    let (status, body) = call(
+        server.port(),
+        "DELETE",
+        "/api/games/GBA/0?purge=true&rom=Alpha.gba",
+        b"",
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(read(d.path(), "Collections/Puzzlers.txt"), "gb/Beta\n");
+    assert_eq!(read(d.path(), "Collections/Other.txt"), "gb/Beta\n");
+    server.stop();
+}
+
+#[test]
+fn gamebit_does_not_serve_ds_games() {
+    let (d, server) = start();
+    put(d.path(), "Games/NDS/Mario Kart DS.nds", b"ds-rom");
+    let (status, body) = call(server.port(), "GET", "/api/games/NDS", b"");
+    assert_ne!(status, 200, "{body}");
+    server.stop();
 }

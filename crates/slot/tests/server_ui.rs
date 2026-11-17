@@ -220,6 +220,22 @@ fn close_reloads_what_the_server_edited() {
 }
 
 #[test]
+fn close_reloads_the_collections_the_server_edited() {
+    let (d, mut a) = on_shelf();
+    let cols = d.path().join("Collections");
+    std::fs::create_dir_all(&cols).unwrap();
+    std::fs::write(cols.join("Puzzlers.txt"), "gba/Emerald\n").unwrap();
+    a.set_server_net(net(&[free_port()]));
+    open(&mut a);
+    paper(&mut a);
+    std::fs::write(cols.join("Puzzlers.txt"), "gba/Fusion\n").unwrap();
+    std::fs::write(cols.join("Arcade.txt"), "gba/Emerald\n").unwrap();
+    press(&mut a, Btn::B);
+    until(&mut a, |a| !a.server_open());
+    assert_eq!(a.collection_names(), ["Arcade", "Puzzlers"]);
+}
+
+#[test]
 fn nothing_overwrites_the_servers_edits_during_a_session() {
     let (d, mut a) = on_shelf();
     a.set_server_net(net(&[free_port()]));
@@ -922,7 +938,10 @@ mod screen {
 
     fn cue_rig() -> Option<(Rig, std::sync::Arc<Ring>)> {
         let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
-        clocked(d.path());
+        let mut state = slot_store::read_slot_state(d.path());
+        state.clock_set = true;
+        state.wallpapers_given = true;
+        slot_store::write_slot_state(d.path(), &state).unwrap();
         let mut sink = StubSink::new();
         sink.open(48_000).unwrap();
         let ring = sink.ring();
@@ -1099,6 +1118,7 @@ mod screen {
         assert!(r.f.rebuilding_labels());
         let before = r.f.app().quick_menu();
         assert!(before.is_some(), "{:?}", r.f.app().phase());
+        r.f.advance(&mut r.input);
         r.input.0.push_back(vec![RawEvent::Down(Btn::Down)]);
         r.f.advance(&mut r.input);
         r.input.0.push_back(vec![RawEvent::Up(Btn::Down)]);

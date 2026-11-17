@@ -20,6 +20,7 @@ fn cart() -> Cart {
         code: String::new(),
         shell: None,
         title: "POKEMON EMER".into(),
+        tags: Vec::new(),
     }
 }
 
@@ -32,6 +33,7 @@ fn pak() -> Cart {
         code: String::new(),
         shell: None,
         title: "TETRIS".into(),
+        tags: Vec::new(),
     }
 }
 
@@ -42,6 +44,8 @@ fn both() -> [(&'static str, Cart); 2] {
 fn label_band(c: &Cart) -> (f32, f32) {
     let (y, h) = match c.platform {
         Platform::Gba | Platform::Gbav => (LABEL_Y as f32, LABEL_H as f32),
+        #[cfg(feature = "nds")]
+        Platform::Nds => (slot_ui::DS_LABEL_Y as f32, slot_ui::DS_LABEL_H as f32),
         Platform::Gb | Platform::Gbc => (GB_LABEL_Y as f32, GB_LABEL_H as f32),
     };
     let k = seated_box(c.platform).1 as f32 / cart_box(c.platform).1 as f32;
@@ -199,7 +203,7 @@ fn a_cart_the_row_had_not_finished_moving_slides_across_as_it_goes_in() {
         "the cart starts at {start:?} rather than in the quad the row had it in"
     );
     assert!(
-        (start.y + start.h - foot_y(CART_H as f32)).abs() < 0.01,
+        (start.y + start.h - foot_y(slot_ui::Canvas::FRAMED, CART_H as f32)).abs() < 0.01,
         "the cart starts with its foot at {} rather than on the row's floor",
         start.y + start.h
     );

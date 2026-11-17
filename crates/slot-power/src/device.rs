@@ -5,7 +5,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::{Battery, Charge, LedState, Platform, RepairResult};
@@ -87,7 +87,7 @@ const EVIOCSFF: c_ulong = 0x4030_4580;
 const DISPDBG_MAX: u32 = 255;
 
 enum Backlight {
-    Class(PathBuf),
+    Class(Vec<(PathBuf, u32)>),
     Dispdbg(PathBuf),
 }
 
@@ -99,30 +99,49 @@ enum Led {
 pub struct DevicePlatform {
     root: PathBuf,
     sysfs: PathBuf,
+    sound_cards: PathBuf,
     backlight: Option<Backlight>,
     max_brightness: u32,
     battery: Option<PathBuf>,
     rtc: Option<PathBuf>,
     motor: Option<Motor>,
     led: Option<Led>,
+    sleep_command: Option<PathBuf>,
+    sleeping: Option<Child>,
 }
 
 impl DevicePlatform {
     pub fn new(root: PathBuf) -> Self {
-        DevicePlatform::probe(Path::new("/sys"), root)
+        let platform = DevicePlatform::probe(Path::new("/sys"), root);
+        match std::env::var_os("DSOS_SLEEP") {
+            Some(cmd) if !cmd.is_empty() => platform.with_sleep(PathBuf::from(cmd)),
+            _ => platform,
+        }
+    }
+
+    pub fn with_sleep(mut self, command: PathBuf) -> Self {
+        self.sleep_command = Some(command);
+        self
+    }
+
+    pub fn with_sound_cards(mut self, cards: PathBuf) -> Self {
+        self.sound_cards = cards;
+        self
     }
 
     pub fn probe(sysfs: &Path, root: PathBuf) -> Self {
-        let class = first_dir(&sysfs.join("class/backlight"), |d| {
-            d.join("brightness").is_file()
-        });
-        let max_brightness = class
-            .as_ref()
-            .and_then(|d| read_number(&d.join("max_brightness")))
-            .unwrap_or(DISPDBG_MAX);
-        let backlight = match class {
-            Some(dir) => Some(Backlight::Class(dir)),
-            None => {
+        let class: Vec<(PathBuf, u32)> = all_dirs(&sysfs.join("class/backlight"))
+            .into_iter()
+            .filter(|d| d.join("brightness").is_file())
+            .map(|d| {
+                let max = read_number(&d.join("max_brightness")).unwrap_or(DISPDBG_MAX);
+                (d, max)
+            })
+            .collect();
+        let max_brightness = class.first().map_or(DISPDBG_MAX, |(_, max)| *max);
+        let backlight = match class.is_empty() {
+            false => Some(Backlight::Class(class)),
+            true => {
                 let dbg = sysfs.join("kernel/debug/dispdbg");
                 dbg.join("param")
                     .is_file()
@@ -133,7 +152,10 @@ impl DevicePlatform {
         let rtc = first_dir(&sysfs.join("class/rtc"), |_| true);
         let motor = Motor::open(sysfs);
         let led = first_dir(&sysfs.join("class/leds"), |d| {
-            d.join("multi_intensity").is_file() || d.join("brightness").is_file()
+            let charging = d
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().contains("charging"));
+            !charging && (d.join("multi_intensity").is_file() || d.join("brightness").is_file())
         })
         .map(|dir| {
             if dir.join("multi_intensity").is_file() {
@@ -146,12 +168,15 @@ impl DevicePlatform {
         DevicePlatform {
             root,
             sysfs: sysfs.to_path_buf(),
+            sound_cards: PathBuf::from(SOUND_CARDS),
             backlight,
             max_brightness,
             battery,
             rtc,
             motor,
             led,
+            sleep_command: None,
+            sleeping: None,
         }
     }
 
@@ -184,7 +209,11 @@ impl DevicePlatform {
             None => absent.to_string(),
         };
         let backlight = match &self.backlight {
-            Some(Backlight::Class(dir)) => leaf(dir),
+            Some(Backlight::Class(dirs)) => dirs
+                .iter()
+                .map(|(dir, _)| leaf(dir))
+                .collect::<Vec<_>>()
+                .join(" and "),
             Some(Backlight::Dispdbg(_)) => "dispdbg".to_string(),
             None => "no backlight".to_string(),
         };
@@ -429,14 +458,16 @@ impl Drop for Motor {
     }
 }
 
-fn first_dir(parent: &Path, keep: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+fn all_dirs(parent: &Path) -> Vec<PathBuf> {
     let mut names: Vec<PathBuf> = fs::read_dir(parent)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .collect();
+        .map(|d| d.filter_map(|e| e.ok()).map(|e| e.path()).collect())
+        .unwrap_or_default();
     names.sort();
-    names.into_iter().find(|p| keep(p))
+    names
+}
+
+fn first_dir(parent: &Path, keep: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    all_dirs(parent).into_iter().find(|p| keep(p))
 }
 
 fn is_battery(dir: &Path) -> bool {
@@ -460,6 +491,16 @@ fn charge_at(dir: &Path) -> Charge {
     }
 }
 
+pub const SOUND_CARDS: &str = "/proc/asound/cards";
+
+pub fn usb_card(cards: &str) -> Option<u32> {
+    cards.lines().find_map(|line| {
+        let (index, rest) = line.trim_start().split_once(' ')?;
+        let index = index.parse().ok()?;
+        rest.contains("USB-Audio").then_some(index)
+    })
+}
+
 fn headphones_in(gpio: &str) -> bool {
     gpio.lines()
         .find(|l| l.contains("|Headphone detection"))
@@ -479,8 +520,25 @@ fn backlight_value(step: u8, max: u32) -> u32 {
 }
 
 impl Platform for DevicePlatform {
+    fn sleep(&mut self) {
+        let Some(command) = &self.sleep_command else {
+            return;
+        };
+        if let Some(child) = &mut self.sleeping {
+            if matches!(child.try_wait(), Ok(None)) {
+                return;
+            }
+        }
+        match Command::new(command).spawn() {
+            Ok(child) => self.sleeping = Some(child),
+            Err(e) => eprintln!("slot: sleep {}: {e}", command.display()),
+        }
+    }
+
     fn headphones(&self) -> bool {
-        fs::read_to_string(self.sysfs.join("kernel/debug/gpio")).is_ok_and(|g| headphones_in(&g))
+        let jack = fs::read_to_string(self.sysfs.join("kernel/debug/gpio"))
+            .is_ok_and(|g| headphones_in(&g));
+        jack || fs::read_to_string(&self.sound_cards).is_ok_and(|c| usb_card(&c).is_some())
     }
 
     fn card_read_only(&self) -> bool {
@@ -502,20 +560,40 @@ impl Platform for DevicePlatform {
         let Some(backlight) = &self.backlight else {
             return;
         };
-        let value = backlight_value(step, self.max_brightness);
         let write = |file: PathBuf, body: String| {
             if let Err(e) = fs::write(&file, body) {
                 eprintln!("slot: {}: {e}", file.display());
             }
         };
         match backlight {
-            Backlight::Class(dir) => write(dir.join("brightness"), value.to_string()),
+            Backlight::Class(dirs) => {
+                for (dir, max) in dirs {
+                    write(
+                        dir.join("brightness"),
+                        backlight_value(step, *max).to_string(),
+                    );
+                }
+            }
             Backlight::Dispdbg(dir) => {
+                let value = backlight_value(step, self.max_brightness);
                 write(dir.join("name"), "lcd0".to_string());
                 write(dir.join("command"), "setbl".to_string());
                 write(dir.join("param"), value.to_string());
                 write(dir.join("start"), "1".to_string());
             }
+        }
+    }
+
+    fn set_bottom_backlight(&mut self, on: bool) {
+        let Some(Backlight::Class(dirs)) = &self.backlight else {
+            return;
+        };
+        let [(bottom, _), _] = dirs.as_slice() else {
+            return;
+        };
+        let file = bottom.join("bl_power");
+        if let Err(e) = fs::write(&file, if on { "0" } else { "4" }) {
+            eprintln!("slot: {}: {e}", file.display());
         }
     }
 

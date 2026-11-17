@@ -10,10 +10,12 @@ Shaders make the picture look more like a real handheld screen.
 | GBA            | Game Boy and Game Boy Color |
 |----------------|-----------------------------|
 | Off            | Off                         |
-| LCD3x          | LCD3x                       |
+| LCD            | LCD                         |
 | Grid (default) | Grid                        |
 | Dot            | Simpletex (default)         |
 | Shimmerless    | Shimmerless                 |
+
+LCD draws red, green and blue stripes across every game pixel. On 3:2 devices it's Gigaherz's LCD3x, which fits GBA's exact 3x. On 4:3 devices slot draws the stripes to fit the screen's own scale, so every game pixel looks the same. The setting follows the card between devices.
 
 Shimmerless is only available for GBA on 4:3 devices. GBA on a 3:2 device is always exactly 3x resolution and Shimmerless has no visual impact.
 
@@ -46,7 +48,7 @@ The choices depend on your screen's shape. slot leaves out any that would look t
 
 ### 4:3 Devices (640×480)
 
-RG35XXSP, RG35XX Plus, RG35XX-H and RG28XX
+RG 35XXSP, RG 35XX Plus, RG 35XX-H and RG 28XX
 
 **Game Boy and Game Boy Color**
 
@@ -66,7 +68,7 @@ RG35XXSP, RG35XX Plus, RG35XX-H and RG28XX
 
 ### 3:2 Devices (720×480)
 
-RG SP, RG34XX and RG34XXSP
+RG SP, RG 34XX and RG 34XXSP
 
 | Scale   | Game Boy and Game Boy Color                                                             |
 |---------|-----------------------------------------------------------------------------------------|
@@ -92,13 +94,11 @@ Bezels are hidden while a game is stretched.
 Some games flicker sprites on and off every other frame to fake see-through effects. The original screens were slow
 enough to blur that into a steady image. On a modern screen you see the flicker.
 
-| Frame Blending | Does                                                        |
-|----------------|-------------------------------------------------------------|
-| Off            | Shows every frame as it is (default)                        |
-| Mix            | Blends each frame with the one before                       |
-| Ghosting       | Leaves a fading trail, like the original screens. mGBA only |
-
-A game on gpSP set to Ghosting gets Mix.
+| Frame Blending | Does                                                                  |
+|----------------|-----------------------------------------------------------------------|
+| Off            | Shows every frame as it is (default)                                  |
+| Mix            | Blends each frame half and half with the one before                   |
+| Ghosting       | Fades each pixel slowly, the way the original screen did              |
 
 ## Bezels
 
@@ -112,6 +112,14 @@ A bezel is a frame drawn around the game.
 Bezels are hidden when the picture fills the screen.
 
 See [Customization](customizing.md) for details on how to make your own.
+
+## Overlays
+
+An overlay is a translucent image laid over the game, under the bezel. slot does not ship with any. 
+
+The Overlay row only appears after you add one.
+
+See [Customization](customizing.md#overlays) for how to make and add them.
 
 ## Brightness and blue light
 

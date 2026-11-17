@@ -27,6 +27,10 @@ impl Power {
         }
     }
 
+    pub fn set_bottom_backlight(&mut self, on: bool) {
+        self.platform.set_bottom_backlight(on);
+    }
+
     pub fn battery(&self) -> Option<Battery> {
         self.platform.battery()
     }
@@ -107,6 +111,7 @@ impl LidPolicy for Power {
         }
         self.closed = true;
         self.platform.set_backlight(0);
+        self.platform.sleep();
     }
 
     fn on_open(&mut self) {

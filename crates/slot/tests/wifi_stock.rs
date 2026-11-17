@@ -192,7 +192,7 @@ fn stock_ui_scans_without_join_or_radio_controls_and_preserves_local_setting() {
         app.apply(Action::GbaUp(btn));
     };
     app.apply(Action::QuickMenu);
-    for row in [QuickRow::General, QuickRow::Wifi, QuickRow::Networks] {
+    for row in [QuickRow::System, QuickRow::Wifi, QuickRow::Networks] {
         for _ in 0..24 {
             if app.quick_menu() == Some(row) {
                 break;
@@ -752,7 +752,7 @@ fn stock_station_ui_exposes_join_and_disconnect_but_not_radio_autojoin_or_forget
     use slot_input::{Action, Btn};
     use slot_ui::QuickRow;
     app.apply(Action::QuickMenu);
-    for row in [QuickRow::General, QuickRow::Wifi, QuickRow::Networks] {
+    for row in [QuickRow::System, QuickRow::Wifi, QuickRow::Networks] {
         for _ in 0..24 {
             if app.quick_menu() == Some(row) {
                 break;

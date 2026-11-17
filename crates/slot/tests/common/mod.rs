@@ -636,6 +636,41 @@ pub fn through(a: &mut App, btn: slot_input::Btn) {
     feed_through(a, btn, now, |a, action| a.apply(action));
 }
 
+pub fn chord(a: &mut App, modifier: slot_input::Btn, btn: slot_input::Btn) {
+    let now = a.now();
+    let mut g = slot_input::Gestures::new();
+    g.set_entries(a.binding_table().entries());
+    for ev in [
+        slot_input::RawEvent::Down(modifier),
+        slot_input::RawEvent::Down(btn),
+        slot_input::RawEvent::Up(btn),
+        slot_input::RawEvent::Up(modifier),
+    ] {
+        g.set_context(a.input_context());
+        for action in g.feed(ev, now) {
+            a.apply(action);
+        }
+    }
+}
+
+pub fn hold(a: &mut App, btn: slot_input::Btn, ms: slot_input::Millis) {
+    let now = a.now();
+    let mut g = slot_input::Gestures::new();
+    g.set_entries(a.binding_table().entries());
+    g.set_context(a.input_context());
+    for action in g.feed(slot_input::RawEvent::Down(btn), now) {
+        a.apply(action);
+    }
+    g.set_context(a.input_context());
+    for action in g.tick(now + ms) {
+        a.apply(action);
+    }
+    g.set_context(a.input_context());
+    for action in g.feed(slot_input::RawEvent::Up(btn), now + ms + 1) {
+        a.apply(action);
+    }
+}
+
 pub fn through_at(a: &mut App, btn: slot_input::Btn, at: slot_input::Millis) {
     feed_through(a, btn, at, |a, action| a.apply_at(action, at));
 }
@@ -684,4 +719,50 @@ pub fn connect(a: &mut App) {
         tick(a);
     }
     assert!(a.wifi_up(), "the fake network did not connect");
+}
+
+pub fn heard_host(
+    d: &TempDir,
+    stem: &str,
+    session: u16,
+    ap: slot::link_radio::HostAp,
+    rssi: i8,
+) -> slot::ble::Heard {
+    let game_crc = slot::art::rom::rom_crc(&rom_path(d, stem)).expect("hash the test rom");
+    slot::ble::Heard {
+        advert: slot::invite::Advert {
+            session,
+            game_crc,
+            core: slot_store::Core::Gpsp,
+            bios_crc: 0,
+            kind: slot::link_kind::LinkKind::Cable,
+            freq_mhz: ap.freq_mhz,
+            bssid: ap.bssid,
+            platform: slot_store::Platform::Gba,
+        },
+        nickname: Some("Dad".to_string()),
+        rssi,
+        at: slot::ble::clock(),
+    }
+}
+
+pub fn reach<T>(
+    t: &mut T,
+    row: slot_ui::QuickRow,
+    at: impl Fn(&T) -> Option<slot_ui::QuickRow>,
+    mut down: impl FnMut(&mut T),
+) {
+    for _ in 0..slot_ui::QuickRow::ALL.len() {
+        if at(t) == Some(row) {
+            return;
+        }
+        down(t);
+    }
+    panic!("never reached {row:?}, stuck on {:?}", at(t));
+}
+
+pub fn plain_wallpaper(root: &Path) {
+    let mut s = slot_store::read_slot_state(root);
+    s.wallpaper = slot_store::WallpaperPick::None;
+    write_slot_state(root, &s).unwrap();
 }

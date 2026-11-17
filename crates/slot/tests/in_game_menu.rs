@@ -2,6 +2,7 @@ mod common;
 
 use common::{app_playing_in, tmp_root_with_carts};
 use slot::app::{App, Phase};
+use slot_gfx::FrameBlend;
 use slot_input::{Action, Btn};
 use slot_store::{Blending, Core, Platform, Shader, StateRing};
 use slot_ui::{
@@ -106,6 +107,7 @@ fn screen_shows_the_palette_only_when_palettes_are_live() {
             &[
                 QuickRow::Palette,
                 QuickRow::Bezel,
+                QuickRow::Overlay,
                 QuickRow::Scale,
                 QuickRow::Stretch,
                 QuickRow::LeftStick
@@ -120,6 +122,7 @@ fn screen_shows_the_palette_only_when_palettes_are_live() {
         [
             &[
                 QuickRow::Bezel,
+                QuickRow::Overlay,
                 QuickRow::Scale,
                 QuickRow::Stretch,
                 QuickRow::LeftStick
@@ -155,14 +158,18 @@ fn colour_correction_toggles_the_running_platform_and_asks_the_core() {
 }
 
 #[test]
-fn frame_blending_steps_the_running_platform_and_asks_the_core() {
+fn frame_blending_steps_the_running_platform_and_hands_it_to_the_gpu() {
     let (_d, mut a) = playing();
     go_to(&mut a, QuickRow::Blending);
     assert_eq!(a.quick_value(QuickRow::Blending), Some(QuickValue::Off));
-    for want in [Blending::Mix, Blending::Ghosting, Blending::Off] {
+    for (want, gpu) in [
+        (Blending::Mix, FrameBlend::Mix),
+        (Blending::Ghosting, FrameBlend::Ghosting),
+        (Blending::Off, FrameBlend::Off),
+    ] {
         press(&mut a, Btn::Right);
         assert_eq!(a.blending_for(Platform::Gba), want);
-        assert_eq!(a.take_blending(), Some(want));
+        assert_eq!(a.frame_blend(), gpu);
         assert_eq!(
             a.quick_value(QuickRow::Blending),
             a.quick_value(QuickRow::GbaBlending)
@@ -171,42 +178,18 @@ fn frame_blending_steps_the_running_platform_and_asks_the_core() {
 }
 
 #[test]
-fn on_gpsp_frame_blending_offers_off_and_mix_and_never_lcd_ghosting() {
+fn on_gpsp_frame_blending_offers_lcd_ghosting_too() {
     let (_d, mut a) = playing();
     a.set_core(Core::Gpsp);
     go_to(&mut a, QuickRow::Blending);
     let mut seen = Vec::new();
-    for btn in [Btn::Right, Btn::Right, Btn::Right, Btn::Left, Btn::Left] {
-        press(&mut a, btn);
+    for _ in 0..3 {
+        press(&mut a, Btn::Right);
         seen.push(a.quick_value(QuickRow::Blending).expect("no value"));
-        assert_ne!(a.take_blending(), Some(Blending::Ghosting));
     }
     assert_eq!(
         seen,
-        [
-            QuickValue::Mix,
-            QuickValue::Off,
-            QuickValue::Mix,
-            QuickValue::Off,
-            QuickValue::Mix
-        ]
-    );
-}
-
-#[test]
-fn an_lcd_ghosting_chosen_for_gba_reads_as_mix_on_gpsp() {
-    let (_d, mut a) = playing();
-    go_to(&mut a, QuickRow::Blending);
-    press(&mut a, Btn::Right);
-    press(&mut a, Btn::Right);
-    assert_eq!(a.blending_for(Platform::Gba), Blending::Ghosting);
-    a.set_core(Core::Gpsp);
-    assert_eq!(a.quick_value(QuickRow::Blending), Some(QuickValue::Mix));
-    assert_eq!(a.blending_in_play(), Blending::Mix);
-    assert_eq!(
-        a.quick_value(QuickRow::GbaBlending),
-        Some(QuickValue::Ghosting),
-        "the console's own setting was changed just by playing on gpSP"
+        [QuickValue::Mix, QuickValue::Ghosting, QuickValue::Off]
     );
 }
 
@@ -513,7 +496,7 @@ fn the_menu_waits_for_the_screen_to_finish_powering_on() {
     let mut out = Vec::new();
     a.draw(&mut out);
     let scrim = out.iter().any(
-        |d| matches!(d, slot_ui::Draw::Rect { colour, .. } if (colour[3] - 0.65).abs() < 0.001),
+        |d| matches!(d, slot_ui::Draw::Rect { colour, .. } if (colour[3] - 0.8).abs() < 0.001),
     );
     assert!(
         !scrim,
@@ -525,7 +508,7 @@ fn the_menu_waits_for_the_screen_to_finish_powering_on() {
     let mut out = Vec::new();
     a.draw(&mut out);
     assert!(out.iter().any(|d| {
-        matches!(d, slot_ui::Draw::Rect { colour, .. } if (colour[3] - 0.65).abs() < 0.001)
+        matches!(d, slot_ui::Draw::Rect { colour, .. } if (colour[3] - 0.8).abs() < 0.001)
     }));
 }
 

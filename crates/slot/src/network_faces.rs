@@ -45,6 +45,7 @@ pub struct NetworkSync {
     pool: Vec<TexId>,
     keys: Option<KeyShape>,
     forgotten: Option<String>,
+    collection_said: u64,
     pair: Option<PairView>,
     pair_pool: Vec<TexId>,
 }
@@ -69,6 +70,7 @@ impl NetworkSync {
     pub fn sync(&mut self, app: &mut App, compositor: &mut Compositor) {
         self.sync_keyboard(app, compositor);
         self.sync_forgotten(app, compositor);
+        self.sync_collection_toast(app, compositor);
         self.sync_pair(app, compositor);
         let Some(screen) = app.network_screen() else {
             return;
@@ -232,6 +234,21 @@ impl NetworkSync {
             .collect();
         app.set_pair_faces(Some(PairFaces { qr, lines }));
         self.pair = Some(now);
+    }
+
+    fn sync_collection_toast(&mut self, app: &App, compositor: &mut Compositor) {
+        let Some((generation, text)) = app.collection_said() else {
+            return;
+        };
+        if generation == self.collection_said {
+            return;
+        }
+        let Some(tex) = app.toast_tex(Toast::Collection) else {
+            return;
+        };
+        self.collection_said = generation;
+        let face = toast_face_text(Toast::Collection, text);
+        compositor.update_texture(tex, face.w, face.h, &face.rgba);
     }
 
     fn sync_forgotten(&mut self, app: &App, compositor: &mut Compositor) {
