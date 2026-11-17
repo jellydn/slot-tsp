@@ -46,6 +46,13 @@ impl ButtonMask {
     }
 }
 
+pub fn mask_for(core_takes_xy: bool, mask: ButtonMask, frame: u32) -> ButtonMask {
+    match core_takes_xy {
+        true => mask,
+        false => mask.turbo(frame),
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct AvInfo {
     pub fps: f64,
@@ -131,6 +138,14 @@ pub trait RetroCore: Send {
     }
     fn video_geometry(&self) -> FrameGeometry {
         FrameGeometry::default()
+    }
+    fn video_size(&self) -> (u32, u32) {
+        (GBA_W, GBA_H)
+    }
+    fn set_touch(&mut self, _at: Option<(u8, u8)>) {}
+    fn set_lid(&mut self, _shut: bool) {}
+    fn takes_xy(&self) -> bool {
+        false
     }
     fn video_xrgb8888(&self) -> &[u8];
     fn take_audio(&mut self) -> Vec<i16>;

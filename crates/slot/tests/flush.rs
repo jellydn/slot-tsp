@@ -271,8 +271,8 @@ fn cart_data_only_sessions_disable_states_and_rewind_but_keep_in_game_saves() {
     assert!(!a.may_rewind());
     assert!(!a.records_rewind());
     for row in [
-        slot_ui::QuickRow::AutoLoad,
-        slot_ui::QuickRow::EjectSave,
+        slot_ui::QuickRow::ResumeInsert,
+        slot_ui::QuickRow::ResumePowerOn,
         slot_ui::QuickRow::Rewind,
     ] {
         assert_eq!(a.quick_value(row), Some(slot_ui::QuickValue::Unavailable));
@@ -327,7 +327,11 @@ fn cart_data_only_menu_marks_state_features_unavailable_without_changing_prefere
     }
     assert_eq!(f.app().quick_menu(), Some(QuickRow::Game));
     tap(&mut f, Btn::A);
-    for row in [QuickRow::Rewind, QuickRow::AutoLoad, QuickRow::EjectSave] {
+    for row in [
+        QuickRow::Rewind,
+        QuickRow::ResumeInsert,
+        QuickRow::ResumePowerOn,
+    ] {
         for _ in 0..20 {
             if f.app().quick_menu() == Some(row) {
                 break;
@@ -343,8 +347,8 @@ fn cart_data_only_menu_marks_state_features_unavailable_without_changing_prefere
         tap(&mut f, Btn::Right);
         let after = read_slot_state(d.path());
         assert_eq!(
-            (prior.auto_load, prior.eject_save, prior.rewind),
-            (after.auto_load, after.eject_save, after.rewind)
+            (prior.resume_insert, prior.resume_power_on, prior.rewind),
+            (after.resume_insert, after.resume_power_on, after.rewind)
         );
     }
     f.compose(&mut compositor);

@@ -12,6 +12,7 @@ device = ["slot-gfx/device", "romm"]
 stock-tg5040 = ["device", "slot-gfx/stock-tg5040"]
 tina-sd = ["stock-tg5040"]
 romm = []
+nds = ["slot-store/nds", "slot-ui/nds"]
 
 [dependencies]
 slot-gfx = { path = "../slot-gfx", default-features = false }

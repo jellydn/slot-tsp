@@ -11,7 +11,7 @@ pub struct Frames {
 }
 
 struct Inner {
-    ready: Option<(Vec<u8>, FrameGeometry)>,
+    ready: Option<(Vec<u8>, FrameGeometry, u64)>,
     spare: Vec<Vec<u8>>,
     allocated: usize,
 }
@@ -40,24 +40,25 @@ impl Frames {
         }
     }
 
-    pub fn publish(&self, buf: Vec<u8>) {
-        self.publish_frame(buf, FrameGeometry::default());
+    pub fn publish(&self, buf: Vec<u8>, cut: u64) {
+        self.publish_frame(buf, FrameGeometry::default(), cut);
     }
 
-    pub fn publish_frame(&self, buf: Vec<u8>, geometry: FrameGeometry) {
+    pub fn publish_frame(&self, buf: Vec<u8>, geometry: FrameGeometry, cut: u64) {
         let mut i = self.lock();
-        if let Some((dropped, _)) = i.ready.replace((buf, geometry)) {
+        if let Some((dropped, _, _)) = i.ready.replace((buf, geometry, cut)) {
             i.spare.push(dropped);
         }
     }
 
     pub fn latest(self: &Arc<Self>) -> Option<FrameRef> {
-        let (buf, geometry) = self.lock().ready.take()?;
+        let (buf, geometry, cut) = self.lock().ready.take()?;
         self.taken.fetch_add(1, Ordering::Relaxed);
         Some(FrameRef {
             frames: self.clone(),
             buf,
             geometry,
+            cut,
         })
     }
 
@@ -86,6 +87,13 @@ pub struct FrameRef {
     frames: Arc<Frames>,
     buf: Vec<u8>,
     pub geometry: FrameGeometry,
+    cut: u64,
+}
+
+impl FrameRef {
+    pub fn cut(&self) -> u64 {
+        self.cut
+    }
 }
 
 impl Deref for FrameRef {

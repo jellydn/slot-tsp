@@ -32,8 +32,21 @@ fn sd_boundary_rejects_escape_links_and_replaced_root() {
         assert!(fs::write(root.join("hardlink"), b"bad").is_err());
     }
     assert!(fs::remove_dir_all(&root).is_err());
+    let collection = slot_store::Collection {
+        name: "Favorites".into(),
+        games: vec![],
+    };
+    slot_store::write_collection(&root, &collection).unwrap();
+    let outside_dir = temp.path().join("outside-dir");
+    assert!(slot_store::write_collection(&outside_dir, &collection).is_err());
+    assert!(!outside_dir.exists());
     std::fs::rename(&root, temp.path().join("removed-card")).unwrap();
     std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(root.join("Collections")).unwrap();
+    let replacement = root.join("Collections/Favorites.txt");
+    std::fs::write(&replacement, b"replacement card").unwrap();
+    assert!(slot_store::delete_collection(&root, "Favorites").is_err());
+    assert_eq!(std::fs::read(&replacement).unwrap(), b"replacement card");
     assert!(fs::write(root.join("new-file"), b"bad").is_err());
     assert!(!root.join("new-file").exists());
     std::fs::create_dir_all(root.join("Games/GBA")).unwrap();
@@ -45,6 +58,7 @@ fn sd_boundary_rejects_escape_links_and_replaced_root() {
         rom: rom.clone(),
         label: None,
         title: String::new(),
+        tags: Vec::new(),
         code: String::new(),
         shell: None,
     };

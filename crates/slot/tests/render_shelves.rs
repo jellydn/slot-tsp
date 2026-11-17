@@ -74,7 +74,7 @@ fn hud_ink(px: &[u8]) -> usize {
 fn name_window() -> (usize, usize, usize, usize) {
     (
         OUT_W as usize / 2 - 70,
-        slot_name_y() as usize,
+        slot_name_y(slot_ui::Canvas::FRAMED) as usize,
         140,
         HINT_H as usize,
     )
@@ -142,6 +142,26 @@ fn put_game_boy_carts(root: &Path) {
     }
 }
 
+fn put_labels(root: &Path) {
+    for (dir, stem, rgb) in [
+        ("GBA", "Emerald", [40u8, 160, 90]),
+        ("GBA", "Fusion", [150, 60, 170]),
+        ("GB", "Tetris Rosy Retrospection", [210, 120, 40]),
+        ("GBC", "Tetris Chromatic", [40, 110, 210]),
+    ] {
+        let path = root.join(format!("Labels/{dir}/{stem}.png"));
+        std::fs::create_dir_all(path.parent().expect("a labels folder")).expect("make Labels");
+        let file = std::fs::File::create(&path).expect("create label");
+        let mut e = png::Encoder::new(std::io::BufWriter::new(file), 640, 330);
+        e.set_color(png::ColorType::Rgb);
+        e.set_depth(png::BitDepth::Eight);
+        e.write_header()
+            .expect("label header")
+            .write_image_data(&rgb.repeat(640 * 330))
+            .expect("label data");
+    }
+}
+
 fn gb_rom(cgb: u8) -> Vec<u8> {
     let mut rom = vec![0u8; 0x8000];
     rom[0x143] = cgb;
@@ -151,7 +171,7 @@ fn gb_rom(cgb: u8) -> Vec<u8> {
 fn on_the_lone_pak(down: u32) -> (usize, usize) {
     (
         (OUT_W / 2) as usize,
-        (rest_y(GB_CART_H as f32) + down as f32) as usize,
+        (rest_y(slot_ui::Canvas::FRAMED, GB_CART_H as f32) + down as f32) as usize,
     )
 }
 
@@ -177,6 +197,7 @@ fn the_shoulders_ring_over_a_shelf_for_each_system() {
     };
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     put_game_boy_carts(d.path());
+    put_labels(d.path());
     clocked(d.path());
     let mut f = Frontend::boot(Box::new(SimPlatform::at(d.path().to_path_buf())));
     f.upload_faces(&mut c);
@@ -713,6 +734,7 @@ fn cartridges() -> [(&'static str, Cart); 2] {
                 code: String::new(),
                 shell: None,
                 title: "POKEMON EMER".into(),
+                tags: Vec::new(),
             },
         ),
         (
@@ -725,6 +747,7 @@ fn cartridges() -> [(&'static str, Cart); 2] {
                 code: String::new(),
                 shell: None,
                 title: "TETRIS".into(),
+                tags: Vec::new(),
             },
         ),
     ]
@@ -806,13 +829,13 @@ fn both_cartridges_go_into_the_slot_at_their_own_size() {
             };
             if seat == 0.0 {
                 assert!(
-                    (top as f32 - rest_y(h as f32)).abs() < 1.5,
+                    (top as f32 - rest_y(slot_ui::Canvas::FRAMED, h as f32)).abs() < 1.5,
                     "{name} stands with its top edge at {top}, not at {} where the carousel \
                      centres a {h} px cartridge",
-                    rest_y(h as f32)
+                    rest_y(slot_ui::Canvas::FRAMED, h as f32)
                 );
                 let middle = (top + bottom) as f32 / 2.0;
-                let want = rest_y(h as f32) + h as f32 / 2.0;
+                let want = rest_y(slot_ui::Canvas::FRAMED, h as f32) + h as f32 / 2.0;
                 assert!(
                     (middle - want).abs() < 1.5,
                     "{name} stands {top}..{bottom}, centred on {middle} rather than on {want}"
@@ -902,6 +925,7 @@ fn a_recents_shelf_rings_paks_and_carts_together() {
     };
     let d = tmp_root_with_carts(&["Emerald", "Fusion"]);
     put_game_boy_carts(d.path());
+    put_labels(d.path());
     let mut s = slot_store::read_slot_state(d.path());
     s.clock_set = true;
     s.show_recents = true;

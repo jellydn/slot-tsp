@@ -7,8 +7,8 @@ use std::time::Instant;
 use slot_input::{Btn, InputSource, Millis, PhysicalEvent, RawEvent};
 
 use super::evdev::{
-    decode, device_name, pad_map, pick_devices, to_raw, Ev, Hat, PadMap, TspAnalog, EVENT_BYTES,
-    EV_ABS, EV_KEY, EV_SYN,
+    decode, device_name, pad_map, Ev, Hat, Keymap, PadMap, TspAnalog, EVENT_BYTES, EV_ABS, EV_KEY,
+    EV_SYN,
 };
 use super::trace;
 
@@ -19,6 +19,7 @@ const PSY: &str = "/sys/class/power_supply";
 const LID_POLL_MS: Millis = 150;
 
 pub struct DeviceInput {
+    held: Vec<Btn>,
     pending: Arc<Mutex<Vec<RawEvent>>>,
     monitor: Arc<Mutex<Option<std::collections::VecDeque<PhysicalEvent>>>>,
     hats: Vec<Arc<Mutex<Hat>>>,
@@ -27,25 +28,40 @@ pub struct DeviceInput {
     hall: Option<PathBuf>,
     lid_shut: Option<bool>,
     next_lid_poll: Millis,
+    touch: Option<super::touch::Touch>,
 }
 
 impl DeviceInput {
-    pub fn open(root: &Path) -> Self {
-        DeviceInput::open_in(Path::new(DEV), Path::new(SYS), root, trace::enabled())
+    pub fn open(keymap: Keymap, root: &Path) -> Self {
+        DeviceInput::open_in(
+            keymap,
+            Path::new(DEV),
+            Path::new(SYS),
+            root,
+            trace::enabled(),
+        )
     }
 
-    pub fn open_in(dev: &Path, sys: &Path, root: &Path, trace: bool) -> Self {
-        let trace = trace.then(|| Trace::start(root, dev, sys)).flatten();
-        DeviceInput::open_traced(dev, sys, trace)
+    pub fn open_in(keymap: Keymap, dev: &Path, sys: &Path, root: &Path, trace: bool) -> Self {
+        let trace = trace
+            .then(|| Trace::start(keymap, root, dev, sys))
+            .flatten();
+        DeviceInput::open_traced(keymap, dev, sys, trace)
     }
 
-    fn open_traced(dev: &Path, sys: &Path, trace: Option<Arc<Trace>>) -> Self {
+    fn open_traced(keymap: Keymap, dev: &Path, sys: &Path, trace: Option<Arc<Trace>>) -> Self {
         let pending: Arc<Mutex<Vec<RawEvent>>> = Arc::new(Mutex::new(Vec::new()));
         let monitor = Arc::new(Mutex::new(None));
         let mut hats = Vec::new();
         let analog = Arc::new(Mutex::new(TspAnalog::default()));
         let mut analog_available = false;
-        for node in pick_devices(dev, sys) {
+        let mut held = Vec::new();
+        for node in keymap.pick_devices(dev, sys) {
+            for b in keymap.held_keys(&node) {
+                if !held.contains(&b) {
+                    held.push(b);
+                }
+            }
             eprintln!(
                 "slot: input {} ({})",
                 node.display(),
@@ -54,7 +70,7 @@ impl DeviceInput {
             #[cfg(not(feature = "stock-tg5040"))]
             quicken_poll(sys, &node);
             let queue = pending.clone();
-            let hat = Arc::new(Mutex::new(Hat::for_map(pad_map())));
+            let hat = Arc::new(Mutex::new(Hat::new(keymap)));
             hats.push(hat.clone());
             let name = node.display().to_string();
             let trace = trace.clone();
@@ -66,6 +82,7 @@ impl DeviceInput {
                 .name(format!("slot-input-{name}"))
                 .spawn(move || {
                     read_node(
+                        keymap,
                         &node,
                         &queue,
                         &hat,
@@ -79,6 +96,7 @@ impl DeviceInput {
             }
         }
         DeviceInput {
+            held,
             pending,
             monitor,
             hats,
@@ -87,7 +105,18 @@ impl DeviceInput {
             hall: find_hall(Path::new(PSY)),
             lid_shut: None,
             next_lid_poll: 0,
+            touch: (keymap == Keymap::DsOs)
+                .then(|| super::touch::open(dev, sys))
+                .flatten(),
         }
+    }
+
+    pub fn held_at_open(&self) -> &[Btn] {
+        &self.held
+    }
+
+    pub fn touch(&self) -> Option<(u8, u8)> {
+        self.touch.as_ref().and_then(|t| t.get())
     }
 }
 
@@ -118,6 +147,7 @@ fn quicken_poll(sys: &Path, node: &Path) {
 }
 
 fn read_node(
+    keymap: Keymap,
     node: &Path,
     queue: &Mutex<Vec<RawEvent>>,
     hat: &Mutex<Hat>,
@@ -171,14 +201,14 @@ fn read_node(
             if (ev.kind == EV_KEY && ev.value == 1) || (ev.kind == EV_ABS && ev.value != 0) {
                 crate::latency::read();
             }
-            match ev.kind {
-                EV_ABS => {
+            match hat.takes(ev) {
+                true => {
                     if let Some(analog) = analog {
                         events.extend(analog.lock().unwrap_or_else(|e| e.into_inner()).feed(ev));
                     }
                     events.extend(hat.feed(ev));
                 }
-                _ => events.extend(to_raw(ev)),
+                false => events.extend(keymap.to_raw(ev)),
             }
         }
         if events.is_empty() {
@@ -199,12 +229,13 @@ fn read_node(
 }
 
 struct Trace {
+    keymap: Keymap,
     out: Mutex<File>,
     began: Instant,
 }
 
 impl Trace {
-    fn start(root: &Path, dev: &Path, sys: &Path) -> Option<Arc<Trace>> {
+    fn start(keymap: Keymap, root: &Path, dev: &Path, sys: &Path) -> Option<Arc<Trace>> {
         let dir = crate::root::logs_dir(root);
         let _ = slot_store::fs::create_dir_all(&dir);
         let path = dir.join(trace::TRACE_FILE);
@@ -215,12 +246,13 @@ impl Trace {
                 return None;
             }
         };
-        for line in trace::survey(dev, sys) {
+        for line in trace::survey(keymap, dev, sys) {
             let _ = writeln!(file, "{line}");
         }
         let _ = writeln!(file, "--");
         let _ = file.flush();
         Some(Arc::new(Trace {
+            keymap,
             out: Mutex::new(file),
             began: Instant::now(),
         }))
@@ -230,7 +262,7 @@ impl Trace {
         if ev.kind == EV_SYN {
             return;
         }
-        let line = trace::event_line(node, self.began.elapsed().as_millis(), ev);
+        let line = trace::event_line(self.keymap, node, self.began.elapsed().as_millis(), ev);
         let mut out = self.out.lock().unwrap_or_else(|e| e.into_inner());
         let _ = writeln!(out, "{line}");
         let _ = out.flush();

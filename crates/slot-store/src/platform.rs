@@ -9,10 +9,14 @@ pub enum Platform {
     Gbav,
     Ps,
     Pico8,
+    #[cfg(feature = "nds")]
+    Nds,
 }
 
 impl Platform {
-    pub const ALL: [Platform; 6] = [
+    pub const ALL: [Platform; 6 + cfg!(feature = "nds") as usize] = [
+        #[cfg(feature = "nds")]
+        Platform::Nds,
         Platform::Gba,
         Platform::Gbav,
         Platform::Gbc,
@@ -29,6 +33,8 @@ impl Platform {
             Platform::Gbav => "Game Boy Advance Video",
             Platform::Ps => "PlayStation",
             Platform::Pico8 => "PICO-8",
+            #[cfg(feature = "nds")]
+            Platform::Nds => "Nintendo DS",
         }
     }
 
@@ -40,6 +46,8 @@ impl Platform {
             Platform::Gbav => "GBAV",
             Platform::Ps => "PS",
             Platform::Pico8 => "PICO8",
+            #[cfg(feature = "nds")]
+            Platform::Nds => "NDS",
         }
     }
 
@@ -70,6 +78,8 @@ impl Platform {
             Platform::Gb | Platform::Gbc => &["gb", "gbc"],
             Platform::Ps => &["cue", "chd", "pbp", "m3u"],
             Platform::Pico8 => &["p8", "p8.png"],
+            #[cfg(feature = "nds")]
+            Platform::Nds => &["nds"],
         }
     }
 
@@ -79,6 +89,8 @@ impl Platform {
             Platform::Gb | Platform::Gbc => (160, 144),
             Platform::Ps => (320, 240),
             Platform::Pico8 => (128, 128),
+            #[cfg(feature = "nds")]
+            Platform::Nds => (256, 192),
         }
     }
 

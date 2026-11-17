@@ -41,7 +41,7 @@ impl Replay {
         for file in ["first.cue", "first.bin"] {
             fs::copy(content.join(file), root.join("Games/PS").join(file)).unwrap();
         }
-        slot_store::write_selected_core(root, "first.cue", core).unwrap();
+        slot_store::write_selected_core(root, Platform::Ps, "first.cue", core).unwrap();
         slot_store::write_slot_state(
             root,
             &SlotState {
@@ -69,7 +69,8 @@ impl Replay {
             .write(true)
             .open(fifo)
             .unwrap();
-        let input = DeviceInput::open_in(&dev, &sys, root, false);
+        let input =
+            DeviceInput::open_in(crate::input::evdev::Keymap::BaseOs, &dev, &sys, root, false);
         assert!(input.analog_available(), "run with SLOT_BOARD=tg5040");
         let sink = StubSink::new();
         let mut frontend = Frontend::boot_with(

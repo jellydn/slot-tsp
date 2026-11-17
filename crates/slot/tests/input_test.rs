@@ -27,7 +27,7 @@ fn root(core: Core, dualshock: bool) -> tempfile::TempDir {
     )
     .unwrap();
     std::fs::write(d.path().join("Games/PS/pad.bin"), [0u8; 2352]).unwrap();
-    slot_store::write_selected_core(d.path(), "Pad.cue", core).unwrap();
+    slot_store::write_selected_core(d.path(), slot_store::Platform::Ps, "Pad.cue", core).unwrap();
     let mut state = slot_store::read_slot_state(d.path());
     state.ps_dualshock = dualshock;
     slot_store::write_slot_state(d.path(), &state).unwrap();

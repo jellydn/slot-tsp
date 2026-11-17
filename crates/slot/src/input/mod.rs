@@ -10,6 +10,7 @@ mod mask;
 mod pad;
 mod table;
 pub mod test_screen;
+pub mod touch;
 pub mod trace;
 
 pub use bind::{btn_device, device_btn};

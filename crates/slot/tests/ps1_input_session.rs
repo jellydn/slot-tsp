@@ -104,7 +104,7 @@ fn both_ps1_core_routes_deliver_buttons_and_sticks_without_plain_trigger_shortcu
             )
             .unwrap();
             std::fs::write(root.join("Games/PS/input.bin"), [0; 2352]).unwrap();
-            slot_store::write_selected_core(root, name, core).unwrap();
+            slot_store::write_selected_core(root, Platform::Ps, name, core).unwrap();
             slot_store::write_slot_state(
                 root,
                 &SlotState {

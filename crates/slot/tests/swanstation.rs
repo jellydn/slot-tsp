@@ -10,7 +10,7 @@ fn swan_is_opt_in_per_game_and_never_a_non_ps1_core() {
     let selected =
         |stem, platform| slot_store::core_for_platform(root, stem, platform, Core::Gambatte);
     assert_eq!(selected("authored.cue", Platform::Ps), Core::PcsxRearmed);
-    slot_store::write_selected_core(root, "authored.cue", Core::SwanStation).unwrap();
+    slot_store::write_selected_core(root, Platform::Ps, "authored.cue", Core::SwanStation).unwrap();
     assert_eq!(selected("authored.cue", Platform::Ps), Core::SwanStation);
     assert_eq!(selected("other.cue", Platform::Ps), Core::PcsxRearmed);
     assert_eq!(selected("authored.cue", Platform::Gba), Core::Mgba);
@@ -100,7 +100,6 @@ fn ps1_picker_can_select_swan_without_changing_other_pairs() {
 fn authored_contract_checks_software_options_card_directory_and_state_gate() {
     let _guard = LIVE_CORE.lock().unwrap();
     use slot_retro::ButtonMask;
-    use slot_store::Blending;
     let d = tempfile::tempdir().unwrap();
     let root = d.path();
     slot::root::ensure(root);
@@ -133,7 +132,6 @@ fn authored_contract_checks_software_options_card_directory_and_state_gate() {
         &rom,
         "",
         false,
-        Blending::Off,
         None,
         None,
     )
@@ -203,7 +201,7 @@ fn swan_session_reopen_preserves_cards_and_never_loads_foreign_resume() {
         .success());
     let name = "authored.chd";
     std::fs::write(root.join("Games/PS").join(name), b"authored contract input").unwrap();
-    slot_store::write_selected_core(root, name, Core::SwanStation).unwrap();
+    slot_store::write_selected_core(root, Platform::Ps, name, Core::SwanStation).unwrap();
     let card = vec![0x5a; 131072];
     persist::write_sav_for(root, Platform::Ps, Core::SwanStation, name, &card).unwrap();
     persist::write_sav_for(

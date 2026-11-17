@@ -209,7 +209,7 @@ fn replay(root: &Path, core: Core, state: SlotState, custom: bool, unbound: bool
     )
     .unwrap();
     fs::write(root.join("Games/PS/input.bin"), [0u8; 2352]).unwrap();
-    slot_store::write_selected_core(root, name, core).unwrap();
+    slot_store::write_selected_core(root, Platform::Ps, name, core).unwrap();
     slot_store::write_slot_state(
         root,
         &SlotState {
@@ -251,7 +251,7 @@ fn replay(root: &Path, core: Core, state: SlotState, custom: bool, unbound: bool
         .write(true)
         .open(&fifo)
         .unwrap();
-    let input = DeviceInput::open_in(&dev, &sys, root, false);
+    let input = DeviceInput::open_in(slot::input::evdev::Keymap::BaseOs, &dev, &sys, root, false);
     assert!(
         input.analog_available(),
         "temporary TRIMUI node was not selected"

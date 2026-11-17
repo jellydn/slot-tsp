@@ -503,28 +503,25 @@ fn native_gameplay_keeps_real_buttons_both_sticks_and_controller_mode() {
         | ButtonMask::R2
         | ButtonMask::L3
         | ButtonMask::R3;
-    for turbo in [true, false] {
-        for (controller, input, sticks, expected) in [
-            (
-                Controller::DualShock,
-                buttons,
-                [[-12345, 23456], [32767, -32768]],
-                [3, 255, 199, 207, 160, 91, 255, 127, 0, 128, 1],
-            ),
-            (Controller::Digital, 0, [[0; 2]; 2], [0; 11]),
-        ] {
-            emu.set_turbo(turbo);
-            emu.set_input(ButtonMask(input));
-            emu.set_controller(controller);
-            emu.set_analog(sticks);
-            let target = emu.published_count() + 2;
-            emu.set_speed(Speed::Normal);
-            assert!(wait_for(|| emu.published_count() >= target));
-            emu.set_speed(Speed::Paused);
-            assert!(wait_for(|| emu.observed_speed() == Speed::Paused));
-            let frame = emu.latest_frame().unwrap();
-            assert_eq!(&frame[..11], &expected, "{controller:?}, GB turbo={turbo}");
-        }
+    for (controller, input, sticks, expected) in [
+        (
+            Controller::DualShock,
+            buttons,
+            [[-12345, 23456], [32767, -32768]],
+            [3, 255, 199, 207, 160, 91, 255, 127, 0, 128, 1],
+        ),
+        (Controller::Digital, 0, [[0; 2]; 2], [0; 11]),
+    ] {
+        emu.set_input(ButtonMask(input));
+        emu.set_controller(controller);
+        emu.set_analog(sticks);
+        let target = emu.published_count() + 2;
+        emu.set_speed(Speed::Normal);
+        assert!(wait_for(|| emu.published_count() >= target));
+        emu.set_speed(Speed::Paused);
+        assert!(wait_for(|| emu.observed_speed() == Speed::Paused));
+        let frame = emu.latest_frame().unwrap();
+        assert_eq!(&frame[..11], &expected, "{controller:?}");
     }
 }
 
@@ -1436,5 +1433,27 @@ fn a_core_stuck_in_a_frame_does_not_hold_the_caller_past_two_seconds() {
     assert!(
         waited < Duration::from_secs(3),
         "the caller waited {waited:?} on a stuck core"
+    );
+}
+
+#[test]
+fn state_loads_resets_and_refreshes_each_cut_the_picture_and_frames_carry_their_cut() {
+    let emu = spawn();
+    let frame_after = |cut: u64| wait_for(|| emu.latest_frame().is_some_and(|f| f.cut() == cut));
+    assert!(frame_after(0), "no frame before any cut");
+    let state = emu
+        .request_state()
+        .recv_timeout(Duration::from_secs(2))
+        .expect("no state");
+    assert_eq!(emu.cuts(), 0, "saving a state jumped the picture");
+    emu.request_load(state);
+    assert!(frame_after(1), "no frame came tagged after the state load");
+    emu.snapshot().reset();
+    assert!(frame_after(2), "no frame came tagged after the reset");
+    emu.set_speed(Speed::Paused);
+    emu.refresh();
+    assert!(
+        frame_after(3),
+        "the refreshed frame was not tagged as a new picture"
     );
 }

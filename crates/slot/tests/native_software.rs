@@ -247,7 +247,6 @@ fn swan_authored_disc_must_execute_gameplay_not_only_firmware_frames() {
         &rom,
         "",
         false,
-        slot_store::Blending::Off,
         None,
         None,
     )
@@ -364,7 +363,6 @@ fn swan_authored_input_audio_disc_reads_and_cards_survive_reopen() {
             &rom,
             "",
             false,
-            slot_store::Blending::Off,
             None,
             None,
         )
@@ -442,7 +440,7 @@ fn swan_authored_input_audio_disc_reads_and_cards_survive_reopen() {
     }
     // Exercise Slot's worker, exit and restart, not only the direct core loader.
     std::fs::write(root.join("Games/PS/other.m3u"), "first.cue\n").unwrap();
-    slot_store::write_selected_core(root, name, Core::SwanStation).unwrap();
+    slot_store::write_selected_core(root, Platform::Ps, name, Core::SwanStation).unwrap();
     for counter in 4..=5 {
         slot_store::write_slot_state(
             root,
@@ -478,8 +476,8 @@ fn swan_authored_input_audio_disc_reads_and_cards_survive_reopen() {
         assert!(!session.app().may_load_state());
         assert!(!session.app().may_rewind());
         for row in [
-            slot_ui::QuickRow::AutoLoad,
-            slot_ui::QuickRow::EjectSave,
+            slot_ui::QuickRow::ResumeInsert,
+            slot_ui::QuickRow::ResumePowerOn,
             slot_ui::QuickRow::Rewind,
         ] {
             assert_eq!(
@@ -554,7 +552,8 @@ fn ps1_formats_save_and_reopen_through_real_sessions() {
                 cart: Some(name.into()),
                 cart_platform: Some(Platform::Ps),
                 clock_set: true,
-                auto_load: false,
+                resume_insert: false,
+                resume_power_on: false,
                 ps_dualshock: true,
                 ..SlotState::default()
             },

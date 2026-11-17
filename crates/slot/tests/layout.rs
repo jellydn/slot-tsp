@@ -21,6 +21,7 @@ fn app_with_carts(stems: &[&str], panel: (u32, u32)) -> App {
                 code: String::new(),
                 shell: None,
                 title: stem.to_uppercase(),
+                tags: Vec::new(),
             })
             .collect(),
     );
@@ -383,4 +384,19 @@ fn the_in_game_menu_hides_the_sp_strip() {
         tick(&mut a);
     }
     assert_eq!(strip_at(&a, strip), None);
+}
+
+#[test]
+fn a_2x_host_builds_bezels_at_the_canvas_size() {
+    let a = app_with_carts(&["Emerald", "Zzz"], (1280, 960));
+    assert_eq!(a.game_bezel_size(), (640, 480));
+}
+
+#[test]
+fn an_unlisted_canvas_gets_the_placeholder_not_a_stretched_bezel() {
+    let a = playing((1000, 700));
+    assert!(a.placeholder_bezel().is_some());
+    assert_eq!(a.bezel_art(), None);
+    assert!(playing((720, 480)).placeholder_bezel().is_none());
+    assert!(playing((640, 480)).placeholder_bezel().is_none());
 }

@@ -14,6 +14,7 @@ fn cart(root: &Path, name: &str, platform: Platform) -> Cart {
         rom: root.join(name),
         label: None,
         title: String::new(),
+        tags: Vec::new(),
         code: String::new(),
         shell: None,
     }

@@ -69,6 +69,7 @@ pub struct Scene {
 pub struct Run {
     pub kind: Option<Kind>,
     pub local_only: bool,
+    pub boxes: bool,
     pub counted: bool,
     pub total: usize,
     pub played: usize,
@@ -101,6 +102,13 @@ pub enum FetchArt {
 }
 
 impl Run {
+    pub fn boxes() -> Run {
+        Run {
+            boxes: true,
+            ..Run::default()
+        }
+    }
+
     pub fn new(kind: Kind) -> Run {
         Run {
             kind: Some(kind),
@@ -128,6 +136,7 @@ impl Run {
                 self.carts.push(cart.clone());
                 self.queue.push_back(cart);
             }
+            ArtEvent::BoxLanded { .. } => self.landed += 1,
             ArtEvent::Missed { stem } => self.missed.push(stem),
             ArtEvent::Done { .. } => self.finished = true,
             ArtEvent::StudioArt(_) | ArtEvent::StudioSaved(_) => {}
@@ -193,6 +202,7 @@ pub struct FetchTex {
     pub under: Option<[slot_ui::TexId; 2]>,
     pub w: u32,
     pub h: u32,
+    pub inked: bool,
 }
 
 pub fn choice_xs(canvas_w: f32) -> [f32; 2] {

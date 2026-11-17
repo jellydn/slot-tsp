@@ -11,3 +11,6 @@ host-probe = []
 
 [dependencies]
 libloading.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
